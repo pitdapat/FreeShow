@@ -76,7 +76,7 @@ export const defaultSettings: { [key in SaveListSettings]: any } = {
     audioEffects: {},
     eqPresets: {},
     effectsLibrary: [],
-    special: {},
+    special: { autoUpdates: true },
     timeline: {},
     timecode: {},
     contentProviderData: {

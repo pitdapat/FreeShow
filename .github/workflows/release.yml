@@ -8,6 +8,7 @@ on:
 jobs:
   publish_windows:
     name: "Publish Windows"
+    if: github.repository == 'ChurchApps/FreeShow'
     runs-on: windows-2022
 
     steps:
@@ -32,6 +33,7 @@ jobs:
 
   publish_linux:
     name: "Publish Linux x64"
+    if: github.repository == 'ChurchApps/FreeShow'
     runs-on: ubuntu-latest
 
     steps:
@@ -61,6 +63,7 @@ jobs:
   # https://github.com/ChurchApps/FreeShow/issues/562
   publish_linux_arm:
     name: "Publish Linux arm64"
+    if: github.repository == 'ChurchApps/FreeShow'
     runs-on: ubuntu-24.04-arm
 
     steps:
@@ -104,6 +107,7 @@ jobs:
 
   publish_mac:
     name: "Publish MacOS"
+    if: github.repository == 'ChurchApps/FreeShow'
     runs-on: macos-latest
 
     steps:

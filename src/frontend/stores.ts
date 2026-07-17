@@ -336,7 +336,7 @@ export const resized: Writable<NumberObject> = writable({ leftPanel: 290, rightP
 export const sorted: Writable<any> = writable({}) // {}
 export const dataPath: Writable<string> = writable("") // "" // DEPRECATED - only for setting
 export const lockedOverlays: Writable<string[]> = writable([]) // []
-export const special: Writable<any> = writable({}) // {}
+export const special: Writable<any> = writable({ autoUpdates: true }) // {default}
 
 // SETTINGS
 export const language: Writable<string> = writable("en") // get locale

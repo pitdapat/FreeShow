@@ -64,6 +64,8 @@ npx playwright install chromium
 npm start                   Start Vite, server watchers, TypeScript watch, and Electron
 npm run build               Create the production frontend, server, and Electron builds
 npm run pack                Build an unpacked application package
+npm run pack:fork           Build the unsigned Windows fork installer without publishing
+npm run release:fork        Build and publish Windows updater assets to pitdapat/FreeShow
 npm run test:unit           Run colocated Vitest unit tests under src/**/*.test.ts
 npm run test:playwright     Run the Electron Playwright test
 npm run test:format         Check Prettier formatting for src and scripts
@@ -77,6 +79,12 @@ The lint scripts include `--fix` for Electron, frontend, and Svelte sources;
 inspect their resulting diff before keeping changes. Playwright launches the
 production Electron entry point, so run `npm run build` first when build output
 is absent or stale.
+
+Fork updater releases come only from `pitdapat/FreeShow`. Use fork-specific
+versions such as `1.6.4-pitdapat.1`, commit the version change, then push a
+matching tag such as `v1.6.4-pitdapat.1` to trigger
+`.github/workflows/fork-release.yml`. Never use the ChurchApps signing or
+publishing workflow for fork releases.
 
 ## Architecture orientation
 

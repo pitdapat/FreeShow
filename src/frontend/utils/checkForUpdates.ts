@@ -1,4 +1,5 @@
 import { get } from "svelte/store"
+import { UPDATE_RELEASES_API } from "../../common/updateSource"
 import { activePopup, alertUpdates, isDev, popupData, special } from "./../stores"
 
 interface UpdateData {
@@ -8,8 +9,11 @@ interface UpdateData {
 }
 
 export async function getUpdateData(currentVersion: string, includeBeta: boolean): Promise<UpdateData> {
-    const response = await fetch("https://api.github.com/repos/ChurchApps/freeshow/releases")
+    const response = await fetch(UPDATE_RELEASES_API)
+    if (!response.ok) throw new Error(`Could not fetch fork releases: ${response.status}`)
+
     const data = await response.json()
+    if (!Array.isArray(data)) throw new Error("Invalid fork release response")
 
     const latestAll = data.filter((a: any) => a.draft === false)[0]
     const latestRelease = data.filter((a: any) => a.draft === false && a.prerelease === false)[0]
