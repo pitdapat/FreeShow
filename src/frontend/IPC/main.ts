@@ -14,47 +14,68 @@ export function requestMainMultiple<T extends Main>(object: { [K in T]: (data: M
     })
 }
 
-const currentlyAwaiting: string[] = []
+const MAIN_RECEIVER_ID = "main-receiver"
+
+type PendingMainRequest = {
+    id: Main
+    resolve: (data: unknown) => void
+    timeout: NodeJS.Timeout
+}
+
+const pendingMainRequests = new Map<string, PendingMainRequest>()
+const mainSubscriptions = new Map<string, { id: Main | ToMain; callback: (data: any) => void }>()
+let mainReceiverRegistered = false
+let mainGlobalReceiverRegistered = false
+
+function receiveMainMessages() {
+    if (mainReceiverRegistered) return
+    mainReceiverRegistered = true
+
+    window.api.receive(
+        MAIN,
+        async (msg: MainReceiveValue | ToMainReceiveValue, listenerId?: string) => {
+            if (listenerId) {
+                const pendingRequest = pendingMainRequests.get(listenerId)
+                if (pendingRequest && msg.channel === pendingRequest.id) {
+                    clearTimeout(pendingRequest.timeout)
+                    pendingMainRequests.delete(listenerId)
+                    pendingRequest.resolve(msg.data)
+                }
+            }
+
+            mainSubscriptions.forEach((subscription) => {
+                if (subscription.id === msg.channel) subscription.callback(msg.data)
+            })
+
+            if (!mainGlobalReceiverRegistered) return
+
+            const id = msg.channel
+            if (!Object.values({ ...Main, ...ToMain }).includes(id)) throw new Error(`Invalid channel: ${id}`)
+            if (!mainResponses[id]) return // console.error(`No response for channel: ${id}`)
+
+            const response = await (mainResponses[id] as any)(msg.data)
+            if (!response) return
+
+            window.api.send(MAIN, { channel: id, data: response }, listenerId)
+        },
+        MAIN_RECEIVER_ID
+    )
+}
+
 // @ts-ignore
 export async function requestMain<ID extends Main, R = Awaited<MainReturnPayloads[ID]>>(id: ID, value?: MainSendValue<ID>, callback?: (data: R | undefined) => void, waitingTimeout: number = 15000) {
     const listenerId = id + uid(5)
-    currentlyAwaiting.push(listenerId)
-
-    sendMain(id, value, listenerId)
-
-    // LISTENER
-    let timeout: NodeJS.Timeout | null = null
-    let settled = false
-    const cleanup = () => {
-        if (timeout) clearTimeout(timeout)
-        window.api.removeListener(MAIN, listenerId)
-
-        const waitIndex = currentlyAwaiting.indexOf(listenerId)
-        if (waitIndex > -1) currentlyAwaiting.splice(waitIndex, 1)
-    }
 
     const returnData: R | undefined = await new Promise((resolve) => {
-        timeout = setTimeout(() => {
-            if (settled) return
-            settled = true
-
+        const timeout = setTimeout(() => {
+            if (!pendingMainRequests.delete(listenerId)) return
             if (get(isDev)) console.error(`IPC Message Timed Out: ${id}`)
-            cleanup()
             resolve(undefined)
         }, waitingTimeout)
 
-        window.api.receive(
-            MAIN,
-            (msg: MainReceiveValue, listenId: string) => {
-                if (settled) return
-                if (msg.channel !== id || listenId !== listenerId) return
-
-                settled = true
-                cleanup()
-                resolve(msg.data as R)
-            },
-            listenerId
-        )
+        pendingMainRequests.set(listenerId, { id, resolve: (data) => resolve(data as R), timeout })
+        receiveMainMessages()
+        sendMain(id, value, listenerId)
     })
 
     if (callback) callback(returnData)
@@ -72,22 +93,10 @@ export function sendMain<ID extends Main>(id: ID, value?: MainSendValue<ID>, lis
     window.api.send(MAIN, { channel: id, data: value }, listenerId)
 }
 
-let mainGlobalReceiverRegistered = false
 export function receiveMainGlobal() {
     if (mainGlobalReceiverRegistered) return
     mainGlobalReceiverRegistered = true
-
-    window.api.receive(MAIN, async (msg: MainReceiveValue | ToMainReceiveValue, listenerId?: string) => {
-        const id = msg.channel
-        if (!Object.values({ ...Main, ...ToMain }).includes(id)) throw new Error(`Invalid channel: ${id}`)
-        if (!mainResponses[id]) return // console.error(`No response for channel: ${id}`)
-
-        const data = msg.data // MainReturnPayloads[Main]
-        const response = await (mainResponses[id] as any)(data)
-        if (!response) return
-
-        window.api.send(MAIN, { channel: id, data: response }, listenerId)
-    })
+    receiveMainMessages()
 }
 
 // @ts-ignore works as it should
@@ -95,13 +104,8 @@ export function receiveMain<ID extends Main, R = Awaited<MainReturnPayloads[ID]>
     if (!Object.values(Main).includes(id)) throw new Error(`Invalid channel: ${id}`)
     const listenerId = uid()
 
-    window.api.receive(
-        MAIN,
-        (msg: MainReceiveValue) => {
-            if (msg.channel === id) callback(msg.data as R)
-        },
-        listenerId
-    )
+    mainSubscriptions.set(listenerId, { id, callback })
+    receiveMainMessages()
 
     return listenerId
 }
@@ -110,17 +114,12 @@ export function receiveToMain<ID extends ToMain, R = Awaited<ToMainSendPayloads[
     if (!Object.values(ToMain).includes(id)) throw new Error(`Invalid channel: ${id}`)
     const listenerId = uid()
 
-    window.api.receive(
-        MAIN,
-        (msg: ToMainReceiveValue) => {
-            if (msg.channel === id) callback(msg.data as R)
-        },
-        listenerId
-    )
+    mainSubscriptions.set(listenerId, { id, callback })
+    receiveMainMessages()
 
     return listenerId
 }
 
 export function destroyMain(listenerId: string) {
-    window.api.removeListener(MAIN, listenerId)
+    mainSubscriptions.delete(listenerId)
 }
