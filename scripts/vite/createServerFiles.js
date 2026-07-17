@@ -4,7 +4,15 @@ const path = require("path")
 // This script ensures server files are built during the production build process
 console.log("Building server files with Vite...")
 
-const servers = ["remote", "stage", "controller", "output_stream"]
+const { servers: allServers } = require("./serverBuildState")
+const requestedServers = process.argv.slice(2)
+const invalidServers = requestedServers.filter((server) => !allServers.includes(server))
+if (invalidServers.length) {
+    console.error(`Unknown server(s): ${invalidServers.join(", ")}`)
+    process.exit(1)
+}
+
+const servers = requestedServers.length ? requestedServers : allServers
 const viteConfig = "config/building/vite.config.servers.mjs"
 
 // Build each server sequentially

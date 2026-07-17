@@ -4,10 +4,14 @@ const { join } = require("path")
 // app build file paths
 const buildSveltePath = join(__dirname, "..", "public", "build")
 const buildElectronPath = join(__dirname, "..", "build") // this includes server files
+const production = process.env.NODE_ENV === "production"
 
-// delete folders and all of it's content
-deleteFolderRecursive(buildSveltePath)
-deleteFolderRecursive(buildElectronPath)
+// Production builds start clean. Development reuses valid outputs so npm start
+// can avoid rebuilding every server before the watchers are ready.
+if (production) {
+    deleteFolderRecursive(buildSveltePath)
+    deleteFolderRecursive(buildElectronPath)
+}
 
 function deleteFolderRecursive(folderPath) {
     if (!existsSync(folderPath)) return
@@ -49,11 +53,12 @@ function getPdfWorkerFile() {
     const outputPath = join(__dirname, "..", "public", "assets", workerName)
 
     try {
+        if (existsSync(outputPath) && readFileSync(originPath).equals(readFileSync(outputPath))) return
         copyFileSync(originPath, outputPath)
     } catch (err) {
         console.error("Could not copy PDF worker file:", err)
     }
 }
 
-if (process.env.NODE_ENV === "production") generateProdConfigs()
+if (production) generateProdConfigs()
 getPdfWorkerFile()
