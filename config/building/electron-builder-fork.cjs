@@ -14,5 +14,12 @@ config.publish = [
         releaseType: "release"
     }
 ]
+config.extraResources = [
+    ...(config.extraResources || []),
+    {
+        from: path.join(__dirname, "app-update-fork.yml"),
+        to: "app-update.yml"
+    }
+]
 
 module.exports = config

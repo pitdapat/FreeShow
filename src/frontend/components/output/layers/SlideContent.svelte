@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onDestroy, onMount } from "svelte"
+    import { onDestroy, onMount, tick } from "svelte"
     import type { Item, OutSlide, SlideData, TimelineAction, Transition } from "../../../../types/Show"
     import { showsCache, slideTimelineSpeedMultiplier } from "../../../stores"
     import { waitUntilValueIsDefined } from "../../../utils/common"
@@ -156,7 +156,6 @@
             if (!shouldPrecomputeAutoSize(item)) return
             const key = createAutoSizeKey(item, index)
             if (!key) return
-            if (item.autoFontSize) return // skip entries that already have cached measurements
             pendingKeys.add(key)
             targets.push({ item: clone(item), index, key })
         })
@@ -175,11 +174,19 @@
 
     // create a stable identifier for precompute + visible textbox coordination
     function createAutoSizeKey(item: Item, index: number) {
-        return item?.id ? String(item.id) : `idx-${index}`
+        const itemKey = item?.id ? String(item.id) : `idx-${index}`
+        const slideKey = `${outSlide?.id || ""}:${outSlide?.layout || ""}:${outSlide?.index ?? ""}`
+        return `${outputId}:${slideKey}:${itemKey}`
     }
 
     let isClearingToEmpty = false
     async function updateItems() {
+        const gen = ++updateGeneration
+        if (timeout) {
+            clearTimeout(timeout)
+            timeout = null
+        }
+
         let betweenClearingTransition = transition.between || transition
         if (betweenClearingTransition?.type === "none") betweenClearingTransition.duration = 0
 
@@ -266,8 +273,6 @@
         const isDifferentSlide = current.currentSlide?.id !== currentSlide?.id || current.outSlide?.index !== outSlide?.index || current.outSlide?.id !== outSlide?.id
         if (isDifferentSlide && currentItems.length && currentSlide.items.length) transitioningBetween = true
 
-        if (timeout) clearTimeout(timeout)
-
         // If all items are persistent (unchanged), skip the show/hide cycle entirely
         if (transitioningItems.length === 0 && persistentItems.length > 0) {
             // Just update the context without triggering transitions
@@ -284,7 +289,29 @@
             return
         }
 
-        const gen = ++updateGeneration
+        // A zero-duration change must stay within one browser task. The previous
+        // setTimeout(0) chain allowed a paint while `show` was false, producing a
+        // one-frame black flash between lyric slides.
+        if (currentTransitionDuration <= 0) {
+            if (precomputePending.size) await waitUntilValueIsDefined(() => !precomputePending.size || gen !== updateGeneration, 10, 600)
+            if (gen !== updateGeneration) return
+
+            show = false
+            await tick()
+            if (gen !== updateGeneration) return
+
+            currentItems = clone(currentSlide.items || [])
+            current = {
+                outSlide: clone(outSlide),
+                slideData: clone(slideData),
+                currentSlide: clone(currentSlide),
+                lines: clone(lines),
+                currentStyle: clone(currentStyle)
+            }
+            transitioningBetween = false
+            show = true
+            return
+        }
 
         // wait for between to update out transition
         timeout = setTimeout(() => {
@@ -475,13 +502,13 @@
 {/if}
 
 <style>
-    /* park precompute textboxes far off-screen so they never flash during transitions */
+    /* Keep the hidden probes at the real slide size so autosize measures the
+       same geometry as the visible textbox. Visibility prevents any paint. */
     .autosize-precompute {
         position: absolute;
-        top: -10000px;
-        left: -10000px;
-        width: 0;
-        height: 0;
+        inset: 0;
+        width: 100%;
+        height: 100%;
         overflow: hidden;
         pointer-events: none;
         visibility: hidden;

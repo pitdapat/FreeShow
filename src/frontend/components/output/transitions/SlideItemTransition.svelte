@@ -61,7 +61,8 @@
         // EXTRA DELAY
 
         // auto size delay
-        if (!outDelay) {
+        const transitionHasDuration = [transition, transition?.in, transition?.out, transition?.between].some((value) => value?.type !== "none" && !!value?.duration)
+        if (!outDelay && transitionHasDuration) {
             let customTemplate = getStyleTemplate(outSlide, currentStyle)
             if (!Object.keys(customTemplate).length && outSlide?.id === "temp") customTemplate = $templates[$scriptureSettings.template] || {}
 
