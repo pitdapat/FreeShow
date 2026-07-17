@@ -5,10 +5,11 @@ const { join } = require("path")
 const buildSveltePath = join(__dirname, "..", "public", "build")
 const buildElectronPath = join(__dirname, "..", "build") // this includes server files
 const production = process.env.NODE_ENV === "production"
+const incremental = process.env.FREESHOW_INCREMENTAL_BUILD === "1"
 
 // Production builds start clean. Development reuses valid outputs so npm start
 // can avoid rebuilding every server before the watchers are ready.
-if (production) {
+if (production && !incremental) {
     deleteFolderRecursive(buildSveltePath)
     deleteFolderRecursive(buildElectronPath)
 }

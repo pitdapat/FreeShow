@@ -6,6 +6,7 @@ const baseConfigPath = path.join(__dirname, "electron-builder.yaml")
 const config = yaml.load(fs.readFileSync(baseConfigPath, "utf8"))
 
 config.win.azureSignOptions = null
+if (process.env.FREESHOW_SKIP_NPM_REBUILD === "1") config.npmRebuild = false
 config.publish = [
     {
         provider: "github",

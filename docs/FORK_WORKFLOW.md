@@ -24,6 +24,18 @@ Use this after fixing a bug or changing the UI when the change is useful for
 daily use but is not ready to become a release:
 
 ```powershell
+npm run build:working
+```
+
+On Windows, `Build-FreeShow-Working.cmd` runs the same command by double-click.
+The working-build cache rebuilds only stale frontend, server, or Electron
+groups, skips native dependency rebuilding when the lockfile and build inputs
+are unchanged, and then refreshes `dist/win-unpacked`. Missing or unsafe cache
+state automatically falls back to the normal full production build.
+
+For a deliberately clean rebuild, use:
+
+```powershell
 npm run build
 npx electron-builder --config config/building/electron-builder-fork.cjs --dir --win --x64 --publish never
 ```

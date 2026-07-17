@@ -35,6 +35,7 @@
         "build:servers:prod": "cross-env NODE_ENV=production node scripts/vite/createServerFiles.js",
         "build:servers:dev": "cross-env NODE_ENV=development node scripts/vite/createServerFiles.js",
         "build:electron:prod": "cross-env NODE_ENV=production tsc --p config/typescript/tsconfig.electron.prod.json",
+        "build:working": "node scripts/buildWorking.js",
         "---RELEASE---": "",
         "prerelease": "npm run build",
         "release": "electron-builder --config config/building/electron-builder.yaml --publish always",
