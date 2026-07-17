@@ -64,6 +64,8 @@ npx playwright install chromium
 npm start                   Start Vite, server watchers, TypeScript watch, and Electron
 npm run build               Create the production frontend, server, and Electron builds
 npm run pack                Build an unpacked application package
+npx electron-builder --config config/building/electron-builder-fork.cjs --dir --win --x64 --publish never
+                            Build the unpacked everyday Windows fork copy
 npm run pack:fork           Build the unsigned Windows fork installer without publishing
 npm run release:fork        Build and publish Windows updater assets to pitdapat/FreeShow
 npm run test:unit           Run colocated Vitest unit tests under src/**/*.test.ts
@@ -85,6 +87,10 @@ versions such as `1.6.4-pitdapat.1`, commit the version change, then push a
 matching tag such as `v1.6.4-pitdapat.1` to trigger
 `.github/workflows/fork-release.yml`. Never use the ChurchApps signing or
 publishing workflow for fork releases.
+
+See `docs/FORK_WORKFLOW.md` for the distinction between development, the
+unpacked everyday build, and installed releases; the complete fork release
+process; and the upstream merge/conflict policy.
 
 ## Architecture orientation
 
