@@ -59,8 +59,10 @@ change is stable and should replace the installed application:
 1. Choose a version newer than the installed and latest fork versions, such as
    `1.6.4-pitdapat.2`.
 2. Update the versions in `package.json` and `package-lock.json`.
-3. Review the complete diff and run the relevant tests, production build, fork
-   packaging, and Electron Playwright test.
+3. Review the complete diff and run `npm run test:ci`, `npm run build`,
+   `npm run test:playwright`, and `npm run pack:fork`. Run
+   `npm run test:mutation` when critical persistence, backup, IPC,
+   cloud-ledger, or output-transition logic changed.
 4. Verify the unsigned installer, `latest.yml`, and packaged `app-update.yml`.
    The updater owner must be `pitdapat` and the repository must be `FreeShow`.
 5. Commit and push the reviewed changes to `origin/main`.
@@ -121,6 +123,22 @@ update URLs after every upstream merge.
 UI customization is compatible with continued upstream updates. Most updates
 will merge automatically; overlapping redesigns require a deliberate manual
 combination followed by testing.
+
+## Test changes before publishing
+
+Tests in this fork are adversarial rather than coverage padding. A regression
+test must fail against the buggy behavior and assert a durable state,
+serialized file, protocol result, or user-visible error. Do not accept
+happy-path-only, assertion-free, fixed-sleep, retry-dependent, or mock-call-only
+tests.
+
+Electron tests use isolated profiles and must never read or write the normal
+FreeShow data directory. Run a complete production build before Playwright;
+partial production builds can leave the renderer bundle missing or stale.
+
+See [Reliable and Adversarial Testing](TESTING.md) for suite commands, current
+coverage and mutation gates, artifacts, CI qualification, and known expansion
+areas.
 
 ## Codex workflow skills
 

@@ -74,6 +74,12 @@ You are welcome to contribute to the code!
 6. In the terminal, run: `npm install`
 7. To start the app, run: `npm start`
 
+Before submitting or publishing a change, run the relevant focused tests and a
+production build. This fork has separate unit, component, integration,
+coverage, mutation, and isolated Electron suites. See
+[Reliable and Adversarial Testing](docs/TESTING.md) for the commands, test
+validity rules, isolation guarantees, and CI qualification policy.
+
 ## Join us on Slack
 
 If you would like to get involved contributing in any way, head over to our [Slack Channel](https://join.slack.com/t/livechurchsolutions/shared_invite/zt-i88etpo5-ZZhYsQwQLVclW12DKtVflg) and introduce yourself. We'd love to hear from you.

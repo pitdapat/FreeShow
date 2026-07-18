@@ -69,18 +69,25 @@ npx electron-builder --config config/building/electron-builder-fork.cjs --dir --
 npm run pack:fork           Build the unsigned Windows fork installer without publishing
 npm run release:fork        Build and publish Windows updater assets to pitdapat/FreeShow
 npm run test:unit           Run colocated Vitest unit tests under src/**/*.test.ts
-npm run test:playwright     Run the Electron Playwright test
+npm run test:component      Run Svelte Testing Library component tests in jsdom
+npm run test:integration    Run integration scenarios, including cloud synchronization
+npm run test:coverage       Run the critical V8 coverage gate
+npm run test:mutation       Mutation-check critical persistence, IPC, cloud, and output logic
+npm run test:ci             Run unit, component, integration, and coverage groups
+npm run test:nightly        Run CI groups, mutation tests, and Electron workflows
+npm run test:playwright     Run isolated production Electron Playwright workflows
 npm run test:format         Check Prettier formatting for src and scripts
 npm run test:svelte         Run svelte-check
-npm test                    Run unit, Playwright, formatting, and Svelte checks in sequence
+npm test                    Run unit, component, integration, Playwright, formatting, and Svelte checks
 npm run format:prettier     Rewrite src and scripts with Prettier
 npm run lint                Run Electron, frontend, Svelte, and style lint tasks
 ```
 
 The lint scripts include `--fix` for Electron, frontend, and Svelte sources;
 inspect their resulting diff before keeping changes. Playwright launches the
-production Electron entry point, so run `npm run build` first when build output
-is absent or stale.
+production Electron entry point, so run the complete `npm run build` first when
+build output is absent or stale. Do not trust an Electron run after only
+`prebuild` or a partial production build.
 
 Fork updater releases come only from `pitdapat/FreeShow`. Use fork-specific
 versions such as `1.6.4-pitdapat.1`, commit the version change, then push a
@@ -91,6 +98,10 @@ publishing workflow for fork releases.
 See `docs/FORK_WORKFLOW.md` for the distinction between development, the
 unpacked everyday build, and installed releases; the complete fork release
 process; and the upstream merge/conflict policy.
+
+See `docs/TESTING.md` for the adversarial test rules, suite boundaries,
+isolation requirements, coverage and mutation gates, CI qualification policy,
+and current protected behaviors.
 
 ## Architecture orientation
 
@@ -110,12 +121,13 @@ process; and the upstream merge/conflict policy.
   server builds.
 - `config/building/`: Electron Builder, Vite server, Rollup, Snap, and packaging
   configuration.
-- `config/testing/`: Vitest and Playwright configuration plus the Electron
-  end-to-end launch test.
+- `config/testing/`: Unit, component, integration, mutation, coverage, and
+  Playwright configuration plus deterministic test guards.
 - `config/linting/` and `config/formatting/`: ESLint, Stylelint, and Prettier
   rules.
-- Unit tests are colocated as `*.test.ts` under `src/`; the Electron Playwright
-  test is `config/testing/start.test.ts`.
+- Unit tests are colocated as `*.test.ts`; component tests use
+  `*.component.test.ts`; cloud integration scenarios are routed through the
+  integration config; Electron workflows are in `config/testing/start.test.ts`.
 
 Generated output lives in `build/`, `dist/`, `public/build/`, and generated
 public JavaScript/map files. `node_modules/`, packaged applications, test
@@ -136,5 +148,12 @@ the repository intentionally changes that policy.
   staged diff. Stage only intended files and explain their purpose.
 - Run the most relevant available checks for the change. Report failures and
   any checks that could not be run; do not claim unrun checks passed.
+- Do not add happy-path-only, assertion-free, retry-dependent,
+  mock-call-verification-only, or coverage-padding tests. Regression tests must
+  fail against the buggy behavior or an equivalent deliberate fault and must
+  inspect a meaningful resulting state.
+- Tests must not access real FreeShow profiles, cloud accounts, credentials, or
+  external services. Unexpected network access, console errors, unhandled
+  promises, leaked processes, and residual temporary profiles are failures.
 - Use clear, specific commit messages. Push completed, reviewed work to
   `origin/main` without force.
