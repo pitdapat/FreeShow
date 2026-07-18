@@ -1,0 +1,45 @@
+name: Nightly adversarial tests
+
+on:
+    schedule:
+        - cron: "0 18 * * *"
+    workflow_dispatch:
+
+jobs:
+    platform:
+        name: ${{ matrix.os }} nightly
+        runs-on: ${{ matrix.os }}
+        timeout-minutes: 90
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [windows-2022, ubuntu-latest, macos-latest]
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+            - name: Install Linux native libraries
+              if: runner.os == 'Linux'
+              run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev uuid-dev libltc-dev --fix-missing
+            - name: Install dependencies
+              run: npm ci
+            - name: Unit, component, integration, and coverage
+              run: npm run test:ci
+            - name: Production build
+              run: npm run build
+            - name: Mutation tests
+              if: runner.os != 'macOS'
+              run: npm run test:mutation
+            - name: Electron adversarial workflows
+              if: runner.os == 'Windows'
+              run: npm run test:playwright
+            - name: Upload nightly evidence
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: nightly-${{ runner.os }}
+                  path: test-output/
+                  if-no-files-found: ignore
+                  retention-days: 30

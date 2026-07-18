@@ -27,6 +27,11 @@ import { loadingOptions, mainOptions } from "./utils/windowOptions"
 // check if app's in production or not
 export const isProd: boolean = process.env.NODE_ENV === "production" || !/[\\/]electron/.exec(process.execPath)
 
+if (process.env.FS_MOCK_STORE_PATH) {
+    app.disableHardwareAcceleration()
+    app.commandLine.appendSwitch("disable-gpu")
+}
+
 // remove "Disabled webSecurity" console warning as it is only disabled in development
 if (!isProd) process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true"
 

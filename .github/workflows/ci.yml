@@ -1,12 +1,14 @@
 name: CI
 
-# Manual activation for now (run from the Actions tab); can be wired to pull_request later.
 on:
+    pull_request:
+    push:
+        branches: [main]
     workflow_dispatch:
 
 jobs:
     checks:
-        name: Format & type-check
+        name: Unit, component, integration, coverage & build
         runs-on: ubuntu-latest
         steps:
             - name: Check out Git repository
@@ -25,6 +27,33 @@ jobs:
             - name: Install dependencies
               run: npm ci
 
+            - name: Unit tests
+              run: npm run test:unit
+
+            - name: Component tests
+              id: component
+              run: npm run test:component
+              continue-on-error: true
+
+            - name: Integration tests
+              id: integration
+              run: npm run test:integration
+              continue-on-error: true
+
+            - name: Critical coverage gate
+              id: coverage
+              run: npm run test:coverage
+              continue-on-error: true
+
+            # New groups remain observational until maintainers confirm 20 consecutive clean runs.
+            - name: Record qualification outcomes
+              if: always()
+              run: |
+                  echo "### Test-group qualification" >> "$GITHUB_STEP_SUMMARY"
+                  echo "- component: ${{ steps.component.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+                  echo "- integration: ${{ steps.integration.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+                  echo "- coverage: ${{ steps.coverage.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+
             # Formatting and svelte type-check currently have a pre-existing backlog, so they are
             # reported but non-blocking for now. Flip continue-on-error off once the backlog is cleared.
             - name: Check formatting
@@ -38,3 +67,12 @@ jobs:
             # Blocking gate: a broken build fails this run.
             - name: Build
               run: npm run build
+
+            - name: Upload test evidence
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ubuntu-test-output
+                  path: test-output/
+                  if-no-files-found: ignore
+                  retention-days: 14

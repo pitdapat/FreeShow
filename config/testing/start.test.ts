@@ -1,136 +1,193 @@
-import { _electron as electron } from "playwright"
-import { expect, test } from "@playwright/test"
-import tmp from "tmp"
+import { _electron as electron, type ElectronApplication, type Page } from "playwright"
+import { expect, test, type TestInfo } from "@playwright/test"
+import fs from "fs"
+import os from "os"
+import path from "path"
 
-const timeoutMs = 2_000;
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+type TestApp = {
+    app: ElectronApplication
+    page: Page
+    dataPath: string
+    settingsPath: string
+    errors: string[]
+    networkAttempts: string[]
+}
 
-test.beforeEach(async ({ context }) => {
-    await context.route("https://api.github.com/repos/ChurchApps/freeshow/releases", (route) => route.abort())
+const testRoots: string[] = []
+const activeApps = new Set<ElectronApplication>()
+const isolatedBoundaryUrls = new Set(["https://raw.githack.com/googlefonts/noto-emoji/main/fonts/NotoColorEmoji.ttf", "https://churchapps.github.io/VotdContent/v1/verses.json", "https://api.github.com/repos/pitdapat/FreeShow/releases"])
+
+function createFolder(prefix: string) {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+    testRoots.push(folder)
+    return folder
+}
+
+async function launch(settingsPath: string, dataPath: string, testInfo: TestInfo): Promise<TestApp> {
+    const app = await electron.launch({
+        args: ["--disable-gpu", "."],
+        env: { ...process.env, NODE_ENV: "production", FS_MOCK_STORE_PATH: settingsPath },
+        timeout: 30000
+    })
+    activeApps.add(app)
+    const errors: string[] = []
+    const networkAttempts: string[] = []
+    const page = await waitForMainWindow(app)
+
+    await page.route(/^https?:\/\//, (route) => {
+        const url = route.request().url()
+        if (!isolatedBoundaryUrls.has(url)) networkAttempts.push(url)
+        return route.fulfill({ status: 204, body: "" })
+    })
+    page.on("pageerror", (error) => errors.push(`pageerror: ${error.stack || error.message}`))
+    page.on("console", (message) => {
+        if (message.type() === "error") errors.push(`console.error: ${message.text()}`)
+    })
+
+    await app.evaluate(async ({ dialog }, folder) => {
+        dialog.showOpenDialogSync = () => [folder]
+    }, dataPath)
+
+    await page.locator('main[data-app-ready="true"]').waitFor()
+    await initializeIfNeeded(page)
+    await testInfo.attach("runtime-paths", { body: JSON.stringify({ settingsPath, dataPath }, null, 2), contentType: "application/json" })
+    return { app, page, dataPath, settingsPath, errors, networkAttempts }
+}
+
+async function waitForMainWindow(app: ElectronApplication) {
+    await expect.poll(() => app.windows().find((window) => window.url().includes("index.html")), { message: "main window did not replace the splash screen" }).toBeTruthy()
+    return app.windows().find((window) => window.url().includes("index.html"))!
+}
+
+async function initializeIfNeeded(page: Page) {
+    const getStarted = page.getByRole("button", { name: "Get started", exact: false })
+    if (!(await getStarted.count())) return
+
+    await page.getByRole("button", { name: "Language", exact: false }).click()
+    await page.getByRole("option", { name: /English$/ }).click()
+    await page.getByRole("button", { name: "Data location", exact: false }).click()
+    await getStarted.click()
+
+    const skipGuide = page.getByRole("button", { name: "Skip", exact: true })
+    await expect(skipGuide).toBeVisible()
+    await skipGuide.click()
+}
+
+async function close(testApp: TestApp) {
+    await forceClose(testApp.app)
+    activeApps.delete(testApp.app)
+    expect(testApp.errors, testApp.errors.join("\n")).toEqual([])
+    expect(testApp.networkAttempts, `unexpected network access:\n${testApp.networkAttempts.join("\n")}`).toEqual([])
+}
+
+async function forceClose(app: ElectronApplication) {
+    const process = app.process()
+    await Promise.race([app.evaluate(({ app }) => app.exit(0)).catch(() => {}), new Promise((resolve) => setTimeout(resolve, 3000))])
+    if (process.exitCode === null) {
+        await Promise.race([new Promise((resolve) => process.once("exit", resolve)), new Promise((resolve) => setTimeout(resolve, 5000))])
+    }
+    if (process.exitCode === null) process.kill()
+    if (process.exitCode === null) {
+        await Promise.race([new Promise((resolve) => process.once("exit", resolve)), new Promise((resolve) => setTimeout(resolve, 5000))])
+    }
+}
+
+test.afterEach(async () => {
+    for (const app of activeApps) await forceClose(app)
+    activeApps.clear()
+    for (const root of testRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 })
 })
 
-test("Launch electron app", async () => {
-    const tmpSettingFolder = tmp.dirSync({ unsafeCleanup: true })
-    const electronApp = await electron.launch({
-        args: ["."],
-        env: { ...process.env, NODE_ENV: "production", FS_MOCK_STORE_PATH: tmpSettingFolder.name },
-    })
+test("empty creation is rejected, then valid show survives a full application restart", async ({}, testInfo) => {
+    const settingsPath = createFolder("freeshow-e2e-settings-")
+    const dataPath = createFolder("freeshow-e2e-data-")
+    let testApp = await launch(settingsPath, dataPath, testInfo)
+    const showsPath = path.join(dataPath, "Shows")
+    const showFiles = () => (fs.existsSync(showsPath) ? fs.readdirSync(showsPath).filter((file) => file.endsWith(".show")) : [])
 
-    // Mocking Electron open dialog
-    const tmpDataFolder = tmp.dirSync({ unsafeCleanup: true })
-    await electronApp.evaluate(async ({ dialog }, tmpDataFolderName) => {
-        dialog.showOpenDialogSync = (): string[] | undefined => {
-            return [tmpDataFolderName]
-        }
-    }, tmpDataFolder.name)
+    await testApp.page.getByText("New project").first().click()
+    await testApp.page.getByText("New show").first().click()
+    expect(showFiles()).not.toContain("Restart Proof.show")
 
-    await electronApp.waitForEvent("window")
+    await testApp.page.getByLabel("Name", { exact: true }).fill("Restart Proof")
+    await testApp.page.getByText("Quick Lyrics").click()
+    const createButton = testApp.page.getByTestId("create.show.popup.new.show")
+    await expect(createButton).toBeDisabled()
+    expect(showFiles()).not.toContain("Restart Proof.show")
 
-    // Seems like we need some delay for FreeShow to start up correctly,
-    // before doing anything
-    // TODO: would be great if we can identify the loading window and main window
-    await delay(5_000)
+    await testApp.page.getByLabel(/quick lyrics/i).fill("[Verse]\nfirst line\nsecond line\n\n[Chorus]\nnever lose me")
+    await createButton.click()
+    await testApp.page.keyboard.press("Control+s")
 
-    const appPath = await electronApp.evaluate(async ({ app }) => {
-        // This runs in the main Electron process, parameter here is always
-        // the result of the require('electron') in the main app script.
-        return app.getAppPath()
-    })
-    console.log(appPath)
+    const showPath = path.join(showsPath, "Restart Proof.show")
+    await expect.poll(() => (fs.existsSync(showPath) ? fs.readFileSync(showPath, "utf8") : "")).toContain("never lose me")
+    const persistedBeforeRestart = fs.readFileSync(showPath, "utf8")
+    await close(testApp)
 
-    // The app opens a small loading/splash window first, then the main window.
-    // firstWindow() can return the splash, so explicitly pick the main window (it loads index.html).
-    let window = electronApp.windows().find((w) => w.url().includes("index.html"))
-    for (let i = 0; i < 20 && !window; i++) {
-        await delay(500)
-        window = electronApp.windows().find((w) => w.url().includes("index.html"))
-    }
-    if (!window) window = await electronApp.firstWindow()
+    testApp = await launch(settingsPath, dataPath, testInfo)
+    await expect(testApp.page.getByText("Restart Proof").first()).toBeVisible()
+    expect(fs.readFileSync(showPath, "utf8")).toBe(persistedBeforeRestart)
+    await close(testApp)
+})
 
-    // Direct Electron console to Node terminal.
-    window.on("console", console.log)
-    try {
-        // Print the title.
-        console.log(await window.title())
+test("the plus button in the left Shows drawer creates a persisted show", async ({}, testInfo) => {
+    const settingsPath = createFolder("freeshow-e2e-settings-")
+    const dataPath = createFolder("freeshow-e2e-data-")
+    const testApp = await launch(settingsPath, dataPath, testInfo)
 
-        // Capture a screenshot.
-        // await window.screenshot({ path: "intro.png" })
+    const drawerAddShow = testApp.page.locator('.drawer button[data-title*="Create a new show"]')
+    await expect(drawerAddShow).toHaveCount(1)
+    await expect(drawerAddShow).toBeVisible()
+    await drawerAddShow.click()
 
-        // Wait for the app UI to be interactive: either the first-run setup popup or the main top bar.
-        await window.locator(".popup button.start, .top").first().waitFor({ timeout: 10 * timeoutMs })
+    await testApp.page.getByLabel("Name", { exact: true }).fill("Left Drawer Proof")
+    await testApp.page.getByText("Quick Lyrics").click()
+    await testApp.page.getByLabel(/quick lyrics/i).fill("[Verse]\ncreated from the left drawer")
+    await testApp.page.getByTestId("create.show.popup.new.show").click()
 
-        // First-run setup popup (Initialize.svelte) — only shown when the app isn't initialized yet.
-        // It can be absent if a previous run already initialized the user data, so guard it.
-        const setupStart = window.locator(".popup button.start")
-        let didSetup = false
-        if ((await setupStart.count()) > 0) {
-            const setupPopup = window.locator(".popup")
+    await expect(testApp.page.getByText("Left Drawer Proof", { exact: true }).first()).toBeVisible()
+    await testApp.page.keyboard.press("Control+s")
+    const showPath = path.join(dataPath, "Shows", "Left Drawer Proof.show")
+    await expect.poll(() => (fs.existsSync(showPath) ? fs.readFileSync(showPath, "utf8") : "")).toContain("created from the left drawer")
+    await close(testApp)
+})
 
-            // Set language to English (it is the default, but select it explicitly so the English text selectors below stay stable)
-            await setupPopup.locator(".dropdown-trigger").first().click({ timeout: 5 * timeoutMs })
-            await setupPopup.locator("li[role=option]").filter({ hasText: "English" }).first().click({ timeout: timeoutMs })
+test("a truncated show cannot crash startup or be silently overwritten", async ({}, testInfo) => {
+    const settingsPath = createFolder("freeshow-e2e-settings-")
+    const dataPath = createFolder("freeshow-e2e-data-")
+    let testApp = await launch(settingsPath, dataPath, testInfo)
+    await close(testApp)
 
-            // Set the data location via the folder picker; this triggers the Electron open dialog, mocked above
-            await setupPopup.locator(".button-trigger").first().click({ timeout: timeoutMs })
+    const showsPath = path.join(dataPath, "Shows")
+    fs.mkdirSync(showsPath, { recursive: true })
+    const corruptPath = path.join(showsPath, "Corrupt.show")
+    const corruptBytes = '["show-corrupt", {"name":"Corrupt","slides":'
+    fs.writeFileSync(corruptPath, corruptBytes)
 
-            // Finish setup ("Get started!")
-            await setupStart.click({ timeout: timeoutMs })
-            didSetup = true
-        }
+    testApp = await launch(settingsPath, dataPath, testInfo)
+    await expect(testApp.page.locator('main[data-app-ready="true"]')).toBeVisible()
+    await expect(testApp.page.getByText("Corrupt", { exact: true })).toHaveCount(0)
+    expect(fs.readFileSync(corruptPath, "utf8")).toBe(corruptBytes)
+    await close(testApp)
+})
 
-        // skip the onboarding guide (it opens right after a fresh setup; its overlay otherwise intercepts clicks)
-        const skipGuide = window.locator("#guideButtons").getByText("Skip")
-        if (didSetup) await skipGuide.waitFor({ timeout: 5 * timeoutMs })
-        if ((await skipGuide.count()) > 0) await skipGuide.click({ timeout: timeoutMs })
+test("a partially valid damaged backup is rejected without replacing existing data", async ({}, testInfo) => {
+    const settingsPath = createFolder("freeshow-e2e-settings-")
+    const dataPath = createFolder("freeshow-e2e-data-")
+    const backupPath = createFolder("freeshow-e2e-damaged-backup-")
+    const testApp = await launch(settingsPath, dataPath, testInfo)
 
-        // Create a new project, then try creating a new show under the project
-        await window.getByText("New project").first().click({ timeout: timeoutMs })
-        await window.getByText("New show").first().click({ timeout: timeoutMs })
+    const welcomePath = path.join(dataPath, "Shows", "Welcome.show")
+    await expect.poll(() => fs.existsSync(welcomePath)).toBe(true)
+    const validBeforeRestore = fs.readFileSync(welcomePath, "utf8")
+    const [welcomeId, welcomeShow] = JSON.parse(validBeforeRestore)
+    fs.writeFileSync(path.join(backupPath, "SHOWS_CONTENT.json"), JSON.stringify({ [welcomeId]: { ...welcomeShow, forbiddenRestoreMarker: "must never commit" } }))
+    fs.writeFileSync(path.join(backupPath, "SETTINGS.json"), '{"language":"en"')
 
-        // Expect the create-show popup to be visible (the name input is part of it)
-        await expect(window.locator("#name")).toBeVisible({ timeout: timeoutMs })
+    await testApp.page.evaluate(({ backupPath }) => (window as any).api.send("MAIN", { channel: "RESTORE", data: { path: backupPath } }), { backupPath })
 
-        // Fill name of show
-        await window.locator("#name").fill("New Test Show", { timeout: timeoutMs })
-
-        // Select category (this will sometimes not have any categories)
-        // await window.getByText("—").click()
-        // await window.locator("#id_categorysong").click()
-
-        // Put lyrics
-        await window.getByText("Quick Lyrics").click({ timeout: timeoutMs })
-        let lyricsBox = window.getByPlaceholder("[Verse]")
-        await lyricsBox.focus()
-        await lyricsBox.fill(`[Verse]\ntest line 1\ntest line 2\n\n[Chorus]\ntest line 3\ntest line 4`, { timeout: timeoutMs })
-
-        // Click new show
-        await window.getByTestId("create.show.popup.new.show").click({ timeout: timeoutMs })
-
-        // Try changing group for Chorus (group names render as text in the #group list)
-        await window.locator("#group").getByText("Chorus").first().click({ timeout: timeoutMs })
-        //await window.getByText("Change group").hover({ timeout: timeoutMs })
-        await window.locator("#group").getByText("Verse").first().click({ timeout: 5 * timeoutMs })
-
-        // Verify the group changing was successful
-        await expect(window.locator("#group").getByText("Verse").first()).toBeVisible({ timeout: timeoutMs })
-
-        // Manual save via keyboard shortcut (Ctrl+S) — robust across menu changes; the app also auto-saves
-        await window.keyboard.press("Escape")
-        await window.keyboard.press("Control+s")
-        await delay(5_000)
-    } catch (ex) {
-        console.log("Taking screenshot")
-        await window.screenshot({ path: "test-output/screenshots/failed.png" })
-        throw ex
-    }
-
-    // Close after finishing
-    console.log("Closing app...")
-    electronApp.close() // await here not detecting close on Linux
-    await delay(2_000)
-    console.log("App closed!")
-
-    tmpDataFolder.removeCallback()
-    tmpSettingFolder.removeCallback()
-    console.log("DONE!")
+    await expect(testApp.page.getByText(/Backup restore rejected: Malformed JSON in backup entry: SETTINGS\.json/)).toBeVisible()
+    expect(fs.readFileSync(welcomePath, "utf8")).toBe(validBeforeRestore)
+    expect(fs.readFileSync(welcomePath, "utf8")).not.toContain("forbiddenRestoreMarker")
+    await close(testApp)
 })

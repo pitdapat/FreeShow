@@ -3,6 +3,7 @@
 // https://www.npmjs.com/package/electron-store
 
 import Store from "electron-store"
+import { app } from "electron"
 import { mkdirSync, statSync } from "fs"
 import path from "path"
 import type { Event } from "../../types/Calendar"
@@ -22,7 +23,14 @@ import { defaultConfig, defaultSettings, defaultSyncedSettings } from "./default
 
 // NOTE: defaults will always replace the keys with any in the default when they are removed
 
-export const config = new Store<Config>({ defaults: defaultConfig })
+const mockStorePath = process.env.FS_MOCK_STORE_PATH ? path.resolve(process.env.FS_MOCK_STORE_PATH) : undefined
+if (mockStorePath) {
+    mkdirSync(mockStorePath, { recursive: true })
+    mkdirSync(path.join(mockStorePath, "Session"), { recursive: true })
+    app.setPath("userData", mockStorePath)
+    app.setPath("sessionData", path.join(mockStorePath, "Session"))
+}
+export const config = new Store<Config>({ defaults: defaultConfig, cwd: mockStorePath })
 
 export const storeFilesData = {
     SHOWS: { fileName: "shows", portable: false, defaults: {} as TrimmedShows, minify: true }, // cache
@@ -114,7 +122,7 @@ export function createStores(previousLocation?: string | null, setup = false) {
         const createStoreConfig = (useCwd: boolean) => ({
             name: data.fileName,
             defaults: data.defaults,
-            cwd: useCwd && data.portable ? configFolderPath : undefined,
+            cwd: mockStorePath || (useCwd && data.portable ? configFolderPath : undefined),
             serialize: (data as any).minify ? (v: any) => JSON.stringify(v) : undefined,
             accessPropertiesByDotNotation: key === "MEDIA" ? false : true
         })

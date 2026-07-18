@@ -134,7 +134,7 @@ export async function syncData(data: { id: SyncProviderId; churchId: string; tea
     let showsFound = false
     const changesFile = extractedFiles.find((file) => file.name === changes_name)
     if (typeof changesFile?.content === "string") {
-        const changesContent = await readFileAsync(changesFile.content)
+        const changesContent = await readFileAsync(changesFile.content, "utf8", true)
         const parsedChanges = safeParseJSON(changesContent)
         const deviceId = getDeviceId()
 
@@ -164,7 +164,7 @@ export async function syncData(data: { id: SyncProviderId; churchId: string; tea
             if (shouldGuard) {
                 readOnly = true
                 guardCloudModifiedAt = latestCloudModifiedAt
-                console.warn("Stale merge guard enabled: running this sync in read-only mode to prevent cloud overwrite.")
+                console.info("Stale merge guard enabled: running this sync in read-only mode to prevent cloud overwrite.")
             }
         }
     }
@@ -213,7 +213,7 @@ export async function syncData(data: { id: SyncProviderId; churchId: string; tea
         if (normalizedName.startsWith("SHOWS/") && normalizedName.endsWith(".show")) {
             showsFound = true
             try {
-                const cloudFile = await readFileAsync(cloudPath)
+                const cloudFile = await readFileAsync(cloudPath, "utf8", true)
                 const parsed = safeParseJSON(cloudFile)
                 if (!parsed || !Array.isArray(parsed)) return
                 const [_id, show] = parsed as [string, Show]
@@ -228,7 +228,7 @@ export async function syncData(data: { id: SyncProviderId; churchId: string; tea
                 }
 
                 const getLocalData = async () => {
-                    const localFile = await readFileAsync(localShowPath)
+                    const localFile = await readFileAsync(localShowPath, "utf8", true)
                     const localParsed = safeParseJSON(localFile)
                     return localParsed ? (localParsed[1] as Show) : null
                 }
@@ -249,7 +249,7 @@ export async function syncData(data: { id: SyncProviderId; churchId: string; tea
             return
         }
 
-        const cloudFile = (file as any).isTemp ? file.content : await readFileAsync(cloudPath)
+        const cloudFile = (file as any).isTemp ? file.content : await readFileAsync(cloudPath, "utf8", true)
         const cloudFileData = safeParseJSON(cloudFile)
         if (!cloudFileData) return
 
@@ -270,7 +270,7 @@ export async function syncData(data: { id: SyncProviderId; churchId: string; tea
                     }
 
                     const getLocalData = async () => {
-                        const localFile = await readFileAsync(localShowPath)
+                        const localFile = await readFileAsync(localShowPath, "utf8", true)
                         const localParsed = safeParseJSON(localFile)
                         return localParsed ? (localParsed[1] as Show) : null
                     }
@@ -306,11 +306,11 @@ export async function syncData(data: { id: SyncProviderId; churchId: string; tea
             // replace local file if cloud is newer or new device
             if (data.method === "replace" || isNewDevice || (await isCloudNewerThanFile(localPath, modifiedDates[file.name]))) {
                 // try to set store directly first, otherwise move the file
-                const cloudContent = await readFileAsync(cloudPath)
+                const cloudContent = cloudFile
                 const parsedData = safeParseJSON(cloudContent)
                 if (parsedData) {
                     await safeStoreSet(localStore, parsedData, id)
-                } else {
+                } else if (!(file as any).isTemp) {
                     await moveFileAsync(cloudPath, localPath)
                 }
 

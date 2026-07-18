@@ -5,6 +5,7 @@ import { MAIN, Main, type MainReceiveValue, type ToMainSendValue2 } from "./../.
 import type { ToMainReceiveValue, ToMainReturnPayloads } from "./../../types/IPC/ToMain"
 import { ToMain, type ToMainSendValue } from "./../../types/IPC/ToMain"
 import { mainResponses } from "./responsesMain"
+import { classifyMainMessage } from "./channelValidation"
 
 export function sendToMain<ID extends ToMain>(id: ID, value: ToMainSendValue<ID>, listenerId?: string) {
     if (!Object.values(ToMain).includes(id)) throw new Error(`Invalid channel: ${id}`)
@@ -21,11 +22,9 @@ export function sendMain<ID extends Main>(id: ID, value: ToMainSendValue2<ID>, l
 }
 
 export async function receiveMain(e: Electron.IpcMainEvent, msg: MainReceiveValue, listenerId: string) {
+    const messageType = classifyMainMessage(msg)
+    if (messageType === "renderer-response") return
     const id = msg.channel
-    if (!Object.values(Main).includes(id)) {
-        if (Object.values(ToMain).includes(id as any)) return
-        throw new Error(`Invalid channel: ${id}`)
-    }
     if (!mainResponses[id]) return console.error(`No response for channel: ${id}`)
 
     const handler = mainResponses[id]

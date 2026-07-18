@@ -305,6 +305,7 @@
         class="input edit dropdown-trigger"
         data-title="{translateText(label)}{selected ? `: <b>${selected.label || '—'}</b>` : ''}"
         role="button"
+        aria-label={translateText(label)}
         tabindex={disabled ? undefined : 0}
         on:click={(e) => {
             if (e.target?.closest(".remove")) return

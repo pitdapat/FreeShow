@@ -55,6 +55,7 @@
     <div
         class="input edit button-trigger"
         role="button"
+        aria-label={translateText(label)}
         tabindex={disabled ? undefined : 0}
         on:click={(e) => {
             if (e.target?.closest(".button")) return

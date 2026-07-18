@@ -3,10 +3,10 @@ import path from "path"
 import { Main } from "../../types/IPC/Main"
 import { ToMain } from "../../types/IPC/ToMain"
 import type { SaveActions } from "../../types/Save"
-import type { Show, Shows } from "../../types/Show"
 import { sendMain, sendToMain } from "../IPC/main"
-import { deleteFile, deleteFolder, doesPathExist, getDataFolderPath, getFileStats, getTimePointString, loadShows, makeDir, openInSystem, readFile, readFolder, selectFilesDialog, writeFile } from "../utils/files"
+import { deleteFile, deleteFolder, doesPathExist, getDataFolderPath, getFileStats, getTimePointString, loadShows, makeDir, openInSystem, readFile, readFolder, selectFilesDialog, writeFileAtomic } from "../utils/files"
 import { _store, setStore, storeFilesData } from "./store"
+import { planBackupRestore } from "./backupValidation"
 import { compressToZip, decompressZip } from "./zip"
 
 export async function startBackup({ customTriggers, isCloudSync }: { customTriggers?: SaveActions; isCloudSync?: boolean } = {}): Promise<{ entries?: { name: string; content?: string | Buffer; filePath?: string }[]; path?: string } | void> {
@@ -147,40 +147,30 @@ export async function restoreFiles(data?: { path: string }) {
         }
     }
 
-    if (!files?.length) return sendToMain(ToMain.RESTORE2, { finished: false })
-    sendToMain(ToMain.RESTORE2, { starting: true })
-
     const showsPath = getDataFolderPath("shows")
-    const portableStoreFiles = Object.entries(storeFilesData)
+    const restorableStoreFiles = Object.entries(storeFilesData)
         .filter(([_, data]) => data.portable)
         .map(([key, _]) => key)
+    // SETTINGS is intentionally included in local backups even though it is not portable.
+    const plan = planBackupRestore(files, [...restorableStoreFiles, "SETTINGS"])
+    if (!plan.ok) {
+        sendToMain(ToMain.ALERT, `Backup restore rejected: ${plan.reason}`)
+        return sendToMain(ToMain.RESTORE2, { finished: false })
+    }
+
+    sendToMain(ToMain.RESTORE2, { starting: true })
 
     let showsRestored = false
-    files.forEach((file: { name: string; content: string | Buffer }) => {
-        if (typeof file.content !== "string") return
-        const filePath = file.name
-
-        if (filePath.includes("SHOWS_CONTENT")) {
-            restoreShows(file.content)
+    plan.actions.forEach((action) => {
+        if (action.kind === "show") {
+            if (!doesPathExist(showsPath)) makeDir(showsPath)
+            const showPath = path.resolve(showsPath, action.fileName)
+            writeFileAtomic(showPath, JSON.stringify([action.id, action.show]), action.id)
             showsRestored = true
             return
         }
 
-        if (filePath.startsWith("SHOWS/")) {
-            restoreSingleShow(file.name, file.content)
-            showsRestored = true
-            return
-        }
-
-        if (filePath.includes("SETTINGS")) {
-            restoreStore(file.content, "SETTINGS")
-            return
-        }
-
-        const storeId = portableStoreFiles.find((a) => filePath.includes(a))
-
-        if (!storeId) return
-        restoreStore(file.content, storeId as keyof typeof _store)
+        restoreStore(action.data, action.storeId as keyof typeof _store)
     })
 
     if (showsRestored) sendMain(Main.SHOWS, loadShows())
@@ -190,10 +180,9 @@ export async function restoreFiles(data?: { path: string }) {
 
     /// //
 
-    function restoreStore(file: string, storeId: keyof typeof _store) {
-        if (!_store[storeId] || !file || !isValidJSON(file)) return
-
-        const data = JSON.parse(file)
+    function restoreStore(source: Record<string, unknown>, storeId: keyof typeof _store) {
+        if (!_store[storeId]) return
+        const data = { ...source }
 
         if (storeId === "SETTINGS") {
             delete data.dataPath
@@ -203,40 +192,5 @@ export async function restoreFiles(data?: { path: string }) {
         setStore(_store[storeId], data)
 
         sendMain(storeId as Main, data)
-    }
-
-    function restoreShows(file: string) {
-        if (!file || !isValidJSON(file)) return
-
-        const shows: Shows = JSON.parse(file)
-
-        // create Shows folder if it does not exist
-        if (!doesPathExist(showsPath)) makeDir(showsPath)
-
-        Object.entries(shows).forEach(saveShow)
-        function saveShow([id, value]: [string, Show]) {
-            if (!value) return
-            const showPath: string = path.resolve(showsPath, (value.name || id) + ".show")
-            writeFile(showPath, JSON.stringify([id, value]), id)
-        }
-    }
-
-    function restoreSingleShow(name: string, content: string) {
-        if (!content || !isValidJSON(content)) return
-
-        const fileName = path.basename(name)
-        const showPath = path.resolve(showsPath, fileName)
-
-        if (!doesPathExist(showsPath)) makeDir(showsPath)
-        writeFile(showPath, content)
-    }
-}
-
-export function isValidJSON(file: string) {
-    try {
-        JSON.parse(file)
-        return true
-    } catch {
-        return false
     }
 }

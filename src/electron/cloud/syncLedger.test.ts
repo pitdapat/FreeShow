@@ -27,6 +27,16 @@ describe("SyncLedger — per-item merge (#3335)", () => {
             expect(b.resolveCloudEntry(ID, KEY, /* localExists */ false).action).toBe("create")
         })
 
+        it("turns a locally-created but now-missing cloud item into a tombstone", () => {
+            const changes = makeChanges(["A", "B"], { created: { [INST]: ["A"] } })
+            const cloudChanges = makeChanges(["A", "B"], { created: { [INST]: ["A"] } })
+            const a = new SyncLedger({ changes, cloudChanges, deviceId: "A" })
+
+            expect(a.resolveCloudEntry(ID, KEY, false).action).toBe("skip")
+            expect(changes.created[INST]).toBeUndefined()
+            expect(changes.deleted[INST]).toEqual(["A"])
+        })
+
         it("two devices adding different items both keep theirs (no whole-file overwrite)", () => {
             const changes = makeChanges(["A", "B"])
             const a = new SyncLedger({ changes, deviceId: "A" })
@@ -117,6 +127,16 @@ describe("SyncLedger — per-item merge (#3335)", () => {
             expect(changes.created[INST]).toBeUndefined()
         })
 
+        it("repairs a legacy ledger that omits the created collection", () => {
+            const changes = makeChanges(["A", "B"])
+            ;(changes as any).created = undefined
+            const a = new SyncLedger({ changes, deviceId: "A" })
+
+            a.markAsCreated(ID, KEY)
+
+            expect(changes.created[INST]).toEqual(["A"])
+        })
+
         it("marking created clears a prior deleted mark (and vice versa)", () => {
             const changes = makeChanges(["A", "B"], { deleted: { [INST]: ["A"] } })
             const a = new SyncLedger({ changes, deviceId: "A" })
@@ -131,6 +151,24 @@ describe("SyncLedger — per-item merge (#3335)", () => {
             const b = new SyncLedger({ changes, deviceId: "B" })
             b.markAsDeleted(ID, KEY)
             expect(changes.deleted[INST]).toBeUndefined()
+        })
+
+        it("does not let duplicate device IDs prematurely acknowledge a tombstone", () => {
+            const changes = makeChanges(["A", "A", "B"], { deleted: { [INST]: ["A"] } })
+            const a = new SyncLedger({ changes, deviceId: "A" })
+
+            a.markAsDeleted(ID, KEY)
+
+            expect(changes.deleted[INST]).toEqual(["A"])
+        })
+
+        it("does not let an unregistered device erase registered-device history", () => {
+            const changes = makeChanges(["A", "B"], { deleted: { [INST]: ["A"] } })
+            const unknown = new SyncLedger({ changes, deviceId: "C" })
+
+            unknown.markAsDeleted(ID, KEY)
+
+            expect(changes.deleted[INST]).toEqual(["A"])
         })
     })
 
@@ -183,6 +221,14 @@ describe("SyncLedger — per-item merge (#3335)", () => {
             const merged = ledger.mergeCollection(ID, "scriptures", cloudWithoutEng, localWithEng)
 
             expect(merged.eng).toBeUndefined() // deletion propagated, not resurrected
+        })
+
+        it("removes a tombstoned item even when stale cloud and local copies both contain it", () => {
+            const changes = makeChanges(["A", "B"], { deleted: { "SYNCED_SETTINGS_scriptures/eng": ["A"] } })
+            const stale = { eng: { name: "King James" } }
+            const ledger = new SyncLedger({ changes, deviceId: "B" })
+
+            expect(ledger.mergeCollection(ID, "scriptures", stale, stale)).toEqual({})
         })
     })
 })

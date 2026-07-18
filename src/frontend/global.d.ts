@@ -21,6 +21,7 @@ type FontData = {
 // window.
 interface Window {
     api: {
+        isTest: boolean
         send: (channel: string, data?: any, id?: string) => void
         receive: (channel: string, func: any, id?: string) => void
         removeListener: (channel: string, id: string) => void

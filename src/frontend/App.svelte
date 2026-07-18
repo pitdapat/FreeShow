@@ -74,7 +74,7 @@
         <MenuBar />
     {/if}
 
-    <main style={globalStyle} class:closeAd={$closeAd} class:background={$currentWindow === "output"}>
+    <main style={globalStyle} class:closeAd={$closeAd} class:background={$currentWindow === "output"} data-app-ready={$loaded ? "true" : "false"}>
         <ContextMenu />
         <TooltipManager />
 

@@ -82,7 +82,8 @@ export class SyncLedger {
 
     private markAs(type: "deleted" | "created", instanceId: string) {
         // with a single device there's nothing to reconcile, so don't track
-        if (this.changes.devices.length < 2) return
+        const registeredDevices = [...new Set(this.changes.devices)]
+        if (registeredDevices.length < 2 || !registeredDevices.includes(this.deviceId)) return
 
         if (!this.changes[type]) this.changes[type] = {}
         if (!this.changes[type][instanceId]) this.changes[type][instanceId] = []
@@ -91,7 +92,8 @@ export class SyncLedger {
         this.changes[type][instanceId].push(this.deviceId)
 
         // once every device has acknowledged the change, drop the entry
-        if (this.changes[type][instanceId].length >= this.changes.devices.length) {
+        const acknowledgements = new Set(this.changes[type][instanceId].filter((deviceId) => registeredDevices.includes(deviceId)))
+        if (acknowledgements.size >= registeredDevices.length) {
             delete this.changes[type][instanceId]
         }
     }

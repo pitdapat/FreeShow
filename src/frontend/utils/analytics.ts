@@ -6,7 +6,7 @@ const API_SECRET = atob("YlVwZE42bXpRVjYyWDc2d0Z3OGMwZw==")
 const SESSION_ID = Date.now().toString()
 
 function trackEvent(eventName: string, params?: Record<string, any>) {
-    if (get(isDev)) return
+    if (get(isDev) || window.api?.isTest) return
 
     const clientId = get(deviceId)
     if (!clientId) return
@@ -23,10 +23,12 @@ function trackEvent(eventName: string, params?: Record<string, any>) {
         events: [{ name: eventName, params: eventParams }]
     }
 
-    fetch(`https://www.google-analytics.com/mp/collect?api_secret=${API_SECRET}&measurement_id=${MEASUREMENT_ID}`, {
+    void fetch(`https://www.google-analytics.com/mp/collect?api_secret=${API_SECRET}&measurement_id=${MEASUREMENT_ID}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
+    }).catch(() => {
+        // Analytics is best-effort and must never surface as an unhandled application error.
     })
 }
 

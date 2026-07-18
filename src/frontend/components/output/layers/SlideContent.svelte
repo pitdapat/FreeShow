@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onDestroy, onMount, tick } from "svelte"
-    import type { Item, OutSlide, SlideData, TimelineAction, Transition } from "../../../../types/Show"
+    import type { Item, OutSlide, SlideData, TimelineAction } from "../../../../types/Show"
     import { showsCache, slideTimelineSpeedMultiplier } from "../../../stores"
     import { waitUntilValueIsDefined } from "../../../utils/common"
     import { shouldItemBeShown } from "../../edit/scripts/itemHelpers"
@@ -9,6 +9,7 @@
     import Textbox from "../../slide/Textbox.svelte"
     import { SlideTimeline } from "../../timeline/SlideTimeline"
     import SlideItemTransition from "../transitions/SlideItemTransition.svelte"
+    import { getItemRenderKey, hasRealTransition, itemsAreEqual } from "./slideContentState"
 
     export let outputId: string
     export let outSlide: OutSlide
@@ -53,23 +54,6 @@
     let persistentItems: Item[] = []
     let persistentItemIndexes: number[] = []
 
-    // Check if a transition is "meaningful" (not none and duration > 0)
-    function hasRealTransition(itemTransition: Transition | undefined, globalTrans: Transition | undefined): boolean {
-        // Item-level transition takes priority
-        const trans = itemTransition || globalTrans
-        if (!trans) return false
-        // If type is "none" or duration is 0/undefined, no real transition
-        if (trans.type === "none") return false
-        if (!trans.duration || trans.duration === 0) return false
-        return true
-    }
-
-    // Compare two items to see if their visible content is identical
-    function itemsAreEqual(oldItem: Item | undefined, newItem: Item | undefined): boolean {
-        if (!oldItem || !newItem) return false
-        // Compare the full serialized content (lines, style, etc.)
-        return JSON.stringify(oldItem) === JSON.stringify(newItem)
-    }
     // maintain a hidden workload that primes autosize results ahead of the visible reveal
     let precomputeTargets: { item: Item; index: number; key: string }[] = []
     let precomputePending = new Set<string>()
@@ -437,7 +421,7 @@
 </script>
 
 <!-- Render all items in original order to maintain z-index layering -->
-{#each currentItems as item, index (index + ":" + (persistentItemIndexes.includes(index) ? "persistent" : "transition"))}
+{#each currentItems as item, index (getItemRenderKey(index, persistentItemIndexes.includes(index)))}
     {#if item && shouldItemBeShown(item, [], showItemRef, conditionsUpdater) && (!item.clickReveal || current.outSlide?.itemClickReveal)}
         {#if persistentItemIndexes.includes(index)}
             <!-- Persistent item: unchanged content, render outside transition to avoid flicker -->

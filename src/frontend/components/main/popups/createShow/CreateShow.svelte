@@ -221,7 +221,7 @@
         {#if Number($splitLines)}<span class="state">{$splitLines}</span>{/if}
     </MaterialButton>
 
-    <MaterialTextarea label="create_show.quick_lyrics" placeholder={getQuickExample()} value={values.text} autofocus={!values.text} rows={showMore ? 6 : Math.max(6, Math.min(12, values.text.split("\n").length))} on:input={(e) => changeValue(e)} />
+    <MaterialTextarea id="quick-lyrics" label="create_show.quick_lyrics" placeholder={getQuickExample()} value={values.text} autofocus={!values.text} rows={showMore ? 6 : Math.max(6, Math.min(12, values.text.split("\n").length))} on:input={(e) => changeValue(e)} />
     <!-- WIP buttons for paste / format(remove chords, remove empty lines), etc. -->
 
     {#if showMore}

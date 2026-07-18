@@ -8,7 +8,7 @@ import { startBackup } from "../data/backup"
 import { defaultSettings, defaultSyncedSettings } from "../data/defaults"
 import { _store, safeStoreSet } from "../data/store"
 import { sendMain, sendToMain } from "../IPC/main"
-import { deleteFile, doesPathExist, getDataFolderPath, parseShow, readFile, writeFile } from "../utils/files"
+import { deleteFile, doesPathExist, getDataFolderPath, parseShow, readFile, writeFileAtomic } from "../utils/files"
 import { checkIfMatching, clone, wait } from "../utils/helpers"
 import { renameShows } from "../utils/shows"
 
@@ -59,7 +59,7 @@ export async function save(data: SaveData) {
     function saveScripture([id, value]: [string, Bible]) {
         if (!value || !isValidJSON(value)) return
         const filePath: string = path.join(scriptureFolderPath, value.name + ".fsb")
-        writeFile(filePath, JSON.stringify([id, value]), id)
+        writeFileAtomic(filePath, JSON.stringify([id, value]), id)
     }
 
     const showsPath = getDataFolderPath("shows")
@@ -74,7 +74,7 @@ export async function save(data: SaveData) {
     function saveShow([id, value]: [string, any]) {
         if (!value || !isValidJSON(value)) return
         const filePath: string = path.join(showsPath, String(value.name || id) + ".show")
-        writeFile(filePath, JSON.stringify([id, value]), id)
+        writeFileAtomic(filePath, JSON.stringify([id, value]), id)
     }
 
     // delete shows

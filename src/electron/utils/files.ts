@@ -21,6 +21,7 @@ import { createThumbnail, doesMediaExist, filePathHashCode } from "../data/thumb
 import { sendMain, sendToMain } from "../IPC/main"
 import { OutputHelper } from "../output/OutputHelper"
 import { mainWindow, setAutoProfile, toApp } from "./../index"
+import { atomicWriteFileSync } from "./atomicWrite"
 import { getAllShows, trimShow } from "./shows"
 
 function actionComplete(err: Error | null, actionFailedMessage: string) {
@@ -96,10 +97,10 @@ export function doesPathExistAsync(filePath: string): Promise<boolean> {
     })
 }
 
-export function readFileAsync(filePath: string, encoding: BufferEncoding = "utf8"): Promise<string> {
+export function readFileAsync(filePath: string, encoding: BufferEncoding = "utf8", suppressNotFound = false): Promise<string> {
     return new Promise((resolve) =>
         fs.readFile(filePath, (err, buffer) => {
-            if (err) console.error(err)
+            if (err && !(suppressNotFound && err.code === "ENOENT")) console.error(err)
             resolve(err ? "" : safeBufferToString(buffer, encoding, filePath))
         })
     )
@@ -174,6 +175,19 @@ export function writeFile(filePath: string, content: string | NodeJS.ArrayBuffer
         return true
     } catch (err) {
         actionComplete(err as Error, "Error when writing to file")
+        if (id) sendToMain(ToMain.SHOW2, { error: "no_write", err: err as Error, id })
+        return false
+    }
+}
+
+export function writeFileAtomic(filePath: string, content: string | NodeJS.ArrayBufferView, id = "") {
+    if (fileContentMatches(content, filePath)) return false
+
+    try {
+        atomicWriteFileSync(filePath, content)
+        return true
+    } catch (err) {
+        actionComplete(err as Error, "Error when atomically writing to file")
         if (id) sendToMain(ToMain.SHOW2, { error: "no_write", err: err as Error, id })
         return false
     }

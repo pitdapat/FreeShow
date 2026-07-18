@@ -18,6 +18,7 @@ const filteredChannels: ValidChannels[] = ["AUDIO"]
 const storedReceivers: { [key: string]: (e: IpcRendererEvent, args: any) => void } = {}
 
 contextBridge.exposeInMainWorld("api", {
+    isTest: !!process.env.FS_MOCK_STORE_PATH,
     send: (channel: ValidChannels, data: any, id?: string) => {
         if (LOG_MESSAGES && appLoaded && !filteredChannels.includes(channel) && !filteredChannelsData.includes(data?.channel)) console.info("TO ELECTRON [" + channel + "]: ", data)
         // if (useTimeout.includes(channel) && data.channel === lastChannel && data.id) return
