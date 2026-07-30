@@ -35,4 +35,33 @@ describe("navigation hierarchy", () => {
         expect(tree.length).toBeGreaterThan(0)
         expect(new Set(tree.map((item) => item.id))).toContain("one")
     })
+
+    it.each([
+        { movingIds: ["worship"], targetId: "worship", expected: true, reason: "itself" },
+        { movingIds: ["worship"], targetId: "youth", expected: true, reason: "a child" },
+        { movingIds: ["worship"], targetId: "camp", expected: true, reason: "a deep descendant" },
+        { movingIds: ["camp"], targetId: "worship", expected: false, reason: "an ancestor" },
+        { movingIds: ["youth", "camp"], targetId: null, expected: false, reason: "the root" }
+    ])("reports $expected when moving a category onto $reason", ({ movingIds, targetId, expected }) => {
+        expect(wouldCreateNavigationCycle(categories, movingIds, targetId)).toBe(expected)
+    })
+
+    it("promotes missing and self-referencing parents to visible roots", () => {
+        const tree = nestNavigationItems([
+            { id: "missing-parent", parent: "deleted" },
+            { id: "self-parent", parent: "self-parent" }
+        ])
+
+        expect(tree.map((item) => item.id)).toEqual(["missing-parent", "self-parent"])
+        expect(tree.every((item) => item.treeChildren.length === 0)).toBe(true)
+    })
+
+    it("counts every category at most once when persisted data contains a cycle", () => {
+        const cyclicCategories = {
+            one: { parent: "two" },
+            two: { parent: "one" }
+        }
+
+        expect(countNestedNavigationItems(cyclicCategories, { one: 2, two: 3 }, "one")).toBe(5)
+    })
 })
