@@ -28,12 +28,12 @@
     $: if (foldersList.length) getCounts()
     async function getCounts() {
         const folderPaths = foldersList.map((a) => a.path || "")
-        const data = keysToID((await requestMain(Main.READ_FOLDER, { path: folderPaths })) || {})
+        const data = keysToID((await requestMain(Main.READ_FOLDER, { path: folderPaths, depth: 5 })) || {})
         const newFolderLengths: { [key: string]: number } = {}
         allCount = 0
 
         folderPaths.forEach((folderPath) => {
-            const count = countFolderMediaItems(folderPath, data)
+            const count = countFolderMediaItems(folderPath, data, true)
             newFolderLengths[folderPath] = count.folder + count.video + count.image
             allCount += count.video + count.image
         })

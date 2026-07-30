@@ -30,6 +30,7 @@
     import Folder from "./Folder.svelte"
     import Media from "./MediaCard.svelte"
     import MediaGrid from "./MediaGrid.svelte"
+    import { getAllMediaRootFolders, getAllMediaSearchResults } from "./mediaLibrary"
     import { loadFromPixabay } from "./pixabay"
     import { loadFromUnsplash } from "./unsplash"
 
@@ -39,9 +40,9 @@
 
     const setView = (v: any) => mediaOptions.update((a) => ({ ...a, view: v }))
 
-    let prevActiveSubTab = active
+    let prevActiveSubTab: string | null = null
     $: if (active !== prevActiveSubTab) {
-        if (active !== "online") setView("all")
+        if (active !== "online") setView(active === "all" ? "folder" : "all")
         prevActiveSubTab = active
     }
 
@@ -53,6 +54,9 @@
     $: notFolders = ["all", ...specialTabs, ...contentProviders.map((p) => p.providerId)]
     $: rootPath = notFolders.includes(active || "") ? "" : active !== null ? $mediaFolders[active]?.path || "" : ""
     $: path = notFolders.includes(active || "") ? "" : rootPath
+    $: mediaFolderPaths = Object.values($mediaFolders)
+        .map((folder) => folder.path || "")
+        .filter(Boolean)
 
     $: folderName = active === "all" ? "category.all" : active === "favourites" ? "category.favourites" : rootPath === path ? (active !== null ? $mediaFolders[active]?.name || "" : "") : splitPath(path).name
 
@@ -137,7 +141,7 @@
             if (active === prevActive) return
             prevActive = active
 
-            requestFiles(Object.values($mediaFolders).map((a) => a.path!))
+            requestFiles(mediaFolderPaths, activeView === "folder" ? 0 : 5)
         } else if (path?.length) {
             if (path === prevActive) return
             prevActive = path
@@ -225,7 +229,15 @@
     }
 
     function openFolder(path: string) {
-        if (path === "all" || path === "favourites") {
+        if (path === "all") {
+            foldersList = getAllMediaRootFolders(allRelevantFiles, mediaFolderPaths)
+            filesList = allRelevantFiles.filter((a) => !a.isFolder)
+
+            filterFiles()
+            return
+        }
+
+        if (path === "favourites") {
             foldersList = []
             filesList = allRelevantFiles.filter((a) => !a.isFolder)
 
@@ -270,6 +282,11 @@
     // filter files
     $: activeView = $mediaOptions.view || "all"
     $: if (activeView || $activeMediaTagFilter || $sorted) filterFiles()
+    let previousAllView = ""
+    $: if (active === "all" && activeView && activeView !== previousAllView) {
+        previousAllView = activeView
+        if (prevActive === "all") requestFiles(mediaFolderPaths, activeView === "folder" ? 0 : 5)
+    }
     $: if (searchValue !== undefined) filterSearch()
 
     let filteredFiles: FileFolder[] = []
@@ -332,11 +349,16 @@
             return
         }
 
-        if (active !== "all" && active !== "favourites" && currentDepth < 5) {
-            await requestFiles(path, 5)
+        if (active !== "favourites" && currentDepth < 5) {
+            if (active === "all") await requestFiles(mediaFolderPaths, 5)
+            else await requestFiles(path, 5)
         }
 
-        searchedFiles = clone(filteredFiles).filter((a) => filter(a.name).includes(filter(searchValue)))
+        if (active === "all") {
+            searchedFiles = clone(getAllMediaSearchResults(allRelevantFiles, mediaFolderPaths, searchValue))
+        } else {
+            searchedFiles = clone(filteredFiles).filter((a) => filter(a.name).includes(filter(searchValue)))
+        }
 
         // scroll to top
         document.querySelector("svelte-virtual-list-viewport")?.scrollTo(0, 0)
@@ -447,8 +469,25 @@
     }
 
     const slidesViews: any = { grid: "list", list: "grid" }
-    // const nextActiveView = { all: "image", folder: "image", image: "video", video: "all" } // all: "folder"
-    $: if (notFolders.includes(active || "") && activeView === "folder") setView("image")
+    const nextActiveViews: Record<string, string> = { all: "folder", folder: "all", image: "video", video: "all" }
+    $: nextActiveView = active === "all" ? (activeView === "folder" ? "all" : "folder") : nextActiveViews[activeView]
+    $: if (active !== "all" && notFolders.includes(active || "") && activeView === "folder") setView("image")
+
+    function openMediaFolder(folderPath: string) {
+        if (active !== "all") {
+            path = folderPath
+            return
+        }
+
+        const folderId = keysToID($mediaFolders).find((folder) => folder.path === folderPath)?.id
+        if (!folderId) return
+
+        drawerTabsData.update((data) => {
+            if (!data.media) data.media = { enabled: true, activeSubTab: folderId }
+            else data.media.activeSubTab = folderId
+            return data
+        })
+    }
 
     $: currentOutput = getFirstActiveOutput($outputs)
 
@@ -576,7 +615,7 @@
                                         .filter(Boolean)
                                         .slice(0, 4)}
                                     folderFilesCount={countFolderMediaItems(item.path, allRelevantFiles)}
-                                    on:open={(e) => (path = e.detail)}
+                                    on:open={(e) => openMediaFolder(e.detail)}
                                 />
                             {:else}
                                 <Media credits={item.credits || {}} name={item.name || ""} path={item.path} thumbnailPath={item.previewUrl || item.thumbnailPath} loadFullImage={$mediaOptions.columns < 3} type={getMediaType(item.extension || getExtension(item.name))} shiftRange={mediaFilesOnly.map((a) => ({ ...a, type: getMediaType(getExtension(a.name)), name: removeExtension(a.name) }))} {active} />
@@ -585,7 +624,7 @@
                     {:else}
                         <VirtualList items={searchedFiles} let:item={file}>
                             {#if file.isFolder}
-                                <Folder name={file.name} path={file.path} mode={$mediaOptions.mode} on:open={(e) => (path = e.detail)} />
+                                <Folder name={file.name} path={file.path} mode={$mediaOptions.mode} on:open={(e) => openMediaFolder(e.detail)} />
                             {:else}
                                 <Media credits={file.credits || {}} thumbnail={$mediaOptions.mode !== "list"} name={file.name || ""} path={file.path} loadFullImage={$mediaOptions.columns < 3} type={getMediaType(file.extension || getExtension(file.name))} shiftRange={mediaFilesOnly.map((a) => ({ ...a, type: getMediaType(getExtension(a.name)), name: removeExtension(a.name) }))} {active} />
                             {/if}
@@ -686,11 +725,11 @@
     {/if}
 
     <FloatingInputs>
-        <!-- {#if open}
-            <MaterialButton title="media.{activeView}" on:click={() => setView(nextActiveView[activeView])}>
+        {#if active !== "favourites" && nextActiveView}
+            <MaterialButton title="media.{activeView}" on:click={() => setView(nextActiveView)}>
                 <Icon size={1.2} id={activeView === "all" ? "media" : activeView} white={activeView === "all"} />
             </MaterialButton>
-        {/if} -->
+        {/if}
 
         <MaterialZoom columns={$mediaOptions.columns} defaultValue={5} on:change={(e) => mediaOptions.set({ ...$mediaOptions, columns: e.detail })} />
 

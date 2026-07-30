@@ -11,10 +11,12 @@ import { requestMain, sendMain } from "../../IPC/main"
 import { audioFolders, cachePath, loadedMediaThumbnails, media, mediaFolders, special } from "../../stores"
 import { addToMediaFolder } from "../../utils/cloudSync"
 import { isMainWindow, newToast, wait, waitUntilValueIsDefined } from "../../utils/common"
+import { translateText } from "../../utils/language"
 import { audioExtensions, imageExtensions, mediaExtensions, presentationExtensions, videoExtensions } from "../../values/extensions"
 import type { API_media, API_slide_thumbnail } from "../actions/api"
 import { clone } from "./array"
 import { getFirstActiveOutput, getOutputResolution } from "./output"
+import { getVideoPlaybackProblem } from "./videoSupport"
 
 export function getExtension(path: string): string {
     if (typeof path !== "string") return ""
@@ -324,19 +326,22 @@ export async function getMediaInfo(path: string): Promise<{ codecs: string[]; mi
     return info
 }
 
-export async function isVideoSupported(path: string) {
+const reportedVideoPlaybackErrors = new Set<string>()
+
+export async function reportVideoPlaybackError(path: string, error: MediaError | null) {
+    const errorCode = error?.code
+    const reportId = `${path}:${errorCode || "unknown"}`
+    if (!path || reportedVideoPlaybackErrors.has(reportId)) return
+
+    // Reserve the report before awaiting codec inspection. Multiple output
+    // windows can fail on the same file at the same time.
+    reportedVideoPlaybackErrors.add(reportId)
+
     const info = await getMediaInfo(path)
-    if (!info?.codecs) return true
+    const problem = getVideoPlaybackProblem(errorCode, info?.codecs || [])
+    if (!problem) return
 
-    // HEVC (H.265) / Timecode
-    const unsupportedCodecs = /(hevc|hvc1|ap4h|tmcd)/i
-    const isUnsupported = info.codecs.length && info.codecs.every((codec) => unsupportedCodecs.test(codec))
-
-    // not reliable:
-    // const isSupported = MediaSource.isTypeSupported(info.mimeCodec)
-
-    if (isUnsupported) newToast("toast.unsupported_video")
-    return !isUnsupported
+    newToast(translateText(problem.translationKey, null, [problem.codecLabel]))
 }
 
 export function setMediaTracks(data: { path: string; tracks: Subtitle[] }) {
@@ -891,14 +896,21 @@ function compressImage(dataUrl: string, maxWidth = 1920, maxHeight = 1080, quali
     })
 }
 
-export function countFolderMediaItems(folderPath: string, folderContents: FileFolder[]) {
-    const folderFiles = (folderContents.find((a) => a.path === folderPath) as any)?.files || []
-    let count = { folder: 0, audio: 0, video: 0, image: 0 }
+export function countFolderMediaItems(folderPath: string, folderContents: FileFolder[], recursive = false) {
+    const normalizePath = (value: string) => value.replaceAll("\\", "/").replace(/\/+$/, "")
+    const normalizedFolderPath = normalizePath(folderPath)
+    const folderContentsByPath = new Map(folderContents.map((item) => [normalizePath(item.path), item]))
+    const isInsideFolder = (value: string) => {
+        const normalizedValue = normalizePath(value)
+        return normalizedValue !== normalizedFolderPath && normalizedValue.startsWith(normalizedFolderPath + "/")
+    }
+    const folderFiles = recursive ? folderContents.filter((item) => isInsideFolder(item.path)).map((item) => item.path) : (folderContentsByPath.get(normalizedFolderPath) as any)?.files || []
+    const count = { folder: 0, audio: 0, video: 0, image: 0 }
 
     folderFiles.forEach((filePath: string) => {
         if (filePath === folderPath) return
 
-        const file = folderContents.find((a) => a.path === filePath)
+        const file = folderContentsByPath.get(normalizePath(filePath))
         if (file?.isFolder) {
             if (file.files?.length) count.folder++
             return

@@ -2,7 +2,7 @@
     import { createEventDispatcher, onDestroy, onMount } from "svelte"
     import type { MediaStyle } from "../../../types/Main"
     import { media } from "../../stores"
-    import { enableSubtitle, encodeFilePath, isVideoSupported } from "../helpers/media"
+    import { enableSubtitle, encodeFilePath, reportVideoPlaybackError } from "../helpers/media"
     import { SoftLoopManager } from "./softLoop"
     import { AudioAnalyser } from "../../audio/audioAnalyser"
 
@@ -121,7 +121,10 @@
     $: playbackRate = Number(mediaStyle.speed) || 1
     $: if (video) video.preservesPitch = true
 
-    $: isVideoSupported(path)
+    function videoError(event: Event) {
+        if (!mirror) reportVideoPlaybackError(path, video?.error || null)
+        dispatch("error", event)
+    }
 
     $: subtitle = $media[path]?.subtitle
     $: tracks = $media[path]?.tracks || []
@@ -214,7 +217,25 @@
     {#if mediaStyle.fit === "blur" && !perfectFit}
         <video class="media" style={mediaStyleBlurString} src={encodeFilePath(path)} bind:playbackRate bind:this={blurVideo} bind:paused={blurPausedState} muted loop={videoData.loop || false} />
     {/if}
-    <video class="media" style={mediaStyleString} bind:this={video} on:loadedmetadata={loaded} on:playing={playing} on:ended={handleEnded} on:error on:timeupdate={handleTimeUpdate} bind:playbackRate bind:currentTime={videoTime} bind:paused={videoData.paused} bind:duration={videoData.duration} muted={mirror ? true : (videoData.muted ?? true)} src={encodeFilePath(path)} autoplay loop={videoData.loop && !softLoopValue} volume={softLoopValue > 0 ? volume * (1 - softLoopOpacity) : volume}>
+    <video
+        class="media"
+        style={mediaStyleString}
+        bind:this={video}
+        on:loadedmetadata={loaded}
+        on:playing={playing}
+        on:ended={handleEnded}
+        on:error={videoError}
+        on:timeupdate={handleTimeUpdate}
+        bind:playbackRate
+        bind:currentTime={videoTime}
+        bind:paused={videoData.paused}
+        bind:duration={videoData.duration}
+        muted={mirror ? true : (videoData.muted ?? true)}
+        src={encodeFilePath(path)}
+        autoplay
+        loop={videoData.loop && !softLoopValue}
+        volume={softLoopValue > 0 ? volume * (1 - softLoopOpacity) : volume}
+    >
         <!-- bind:volume={audioVolume} -->
         {#each tracks as track}
             <track label={track.name} srclang={track.lang} kind="subtitles" src="data:text/vtt;charset=utf-8,{encodeURI(track.vtt)}" />
