@@ -29,6 +29,7 @@ import { apiReturnData, emitOSC, startWebSocketAndRest, stopApiListener } from "
 import { closeMain } from "../utils/close"
 import { downloadFfmpeg, getFfmpegPath, isFfmpegInstalled } from "../streaming/ffmpegManager"
 import { addToMediaFolder, bundleMediaFiles, getDataFolderPath, getDataFolderRoot, getFileInfo, getMediaCodec, getMediaSyncFolderPath, getMediaTracks, getPaths, getSimularPaths, loadFile, loadShowsAsync, locateMediaFile, openInSystem, readExifData, readFile, readFolder, readFolderContent, selectFiles, selectFilesDialog, selectFolder, setMediaSyncFolderPath, writeFile } from "../utils/files"
+import { moveMediaFiles } from "../utils/mediaFiles"
 import { getMachineId } from "../utils/helpers"
 import { LyricSearch } from "../utils/LyricSearch"
 import { closeMidiInPorts, getMidiInputs, getMidiOutputs, receiveMidi, sendMidi } from "../utils/midi"
@@ -166,6 +167,7 @@ export const mainResponses: MainResponses = {
     [Main.MEDIA_FOLDER_COPY]: (data) => addToMediaFolder(data.paths),
     [Main.READ_BIBLES_FOLDER]: () => readBiblesFolder(),
     [Main.FILE_INFO]: (data) => getFileInfo(data),
+    [Main.MOVE_MEDIA_FILES]: (data) => moveMediaFiles(data),
     [Main.READ_FOLDER]: (data) => readFolderContent(data),
     [Main.READ_FILE]: (data) => ({ content: readFile(data.path) }),
     [Main.OPEN_FOLDER]: (data) => selectFolder(data),

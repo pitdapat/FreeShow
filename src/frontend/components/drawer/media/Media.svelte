@@ -5,7 +5,7 @@
     import type { ClickEvent, FileFolder } from "../../../../types/Main"
     import { requestMain } from "../../../IPC/main"
     import { addProjectItem } from "../../../converters/project"
-    import { activeDrawerTab, activeEdit, activeFocus, activeMediaTagFilter, activePopup, activeShow, audioFolders, cloudSyncData, drawerTabsData, focusMode, labelsDisabled, media, mediaFolders, mediaOptions, outLocked, outputs, popupData, providerConnections, selectAllMedia, selected, sorted, special, styles } from "../../../stores"
+    import { activeDrawerTab, activeEdit, activeFocus, activeMediaTagFilter, activePopup, activeShow, audioFolders, cloudSyncData, drawerTabsData, focusMode, labelsDisabled, media, mediaFolderRefresh, mediaFolders, mediaOptions, outLocked, outputs, popupData, providerConnections, selectAllMedia, selected, sorted, special, styles } from "../../../stores"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
     import { clone, keysToID, sortFilenames } from "../../helpers/array"
@@ -30,7 +30,7 @@
     import Folder from "./Folder.svelte"
     import Media from "./MediaCard.svelte"
     import MediaGrid from "./MediaGrid.svelte"
-    import { getAllMediaRootFolders, getAllMediaSearchResults } from "./mediaLibrary"
+    import { getAllMediaRootFolders, getAllMediaSearchResults, isPathInsideRoot, MEDIA_LIBRARY_DEPTH } from "./mediaLibrary"
     import { loadFromPixabay } from "./pixabay"
     import { loadFromUnsplash } from "./unsplash"
 
@@ -53,7 +53,9 @@
     $: isProviderSection = contentProviders.some((p) => p.providerId === active)
     $: notFolders = ["all", ...specialTabs, ...contentProviders.map((p) => p.providerId)]
     $: rootPath = notFolders.includes(active || "") ? "" : active !== null ? $mediaFolders[active]?.path || "" : ""
-    $: path = notFolders.includes(active || "") ? "" : rootPath
+    $: requestedFolderPath = $drawerTabsData.media?.activeFolderPath || rootPath
+    $: navigationPath = rootPath && isPathInsideRoot(requestedFolderPath, rootPath) ? requestedFolderPath : rootPath
+    $: path = notFolders.includes(active || "") ? "" : navigationPath
     $: mediaFolderPaths = Object.values($mediaFolders)
         .map((folder) => folder.path || "")
         .filter(Boolean)
@@ -118,6 +120,12 @@
     let prevActive: null | string = null
     let prevTab = ""
     $: if (active || path) updateContent()
+    let previousMediaFolderRefresh = $mediaFolderRefresh
+    $: if ($mediaFolderRefresh !== previousMediaFolderRefresh) {
+        previousMediaFolderRefresh = $mediaFolderRefresh
+        prevActive = null
+        updateContent()
+    }
     async function updateContent() {
         if (prevActive === "online" && active !== "online") setView("all")
         if (active !== "online") prevTab = ""
@@ -141,7 +149,7 @@
             if (active === prevActive) return
             prevActive = active
 
-            requestFiles(mediaFolderPaths, activeView === "folder" ? 0 : 5)
+            requestFiles(mediaFolderPaths, activeView === "folder" ? 0 : MEDIA_LIBRARY_DEPTH)
         } else if (path?.length) {
             if (path === prevActive) return
             prevActive = path
@@ -285,7 +293,7 @@
     let previousAllView = ""
     $: if (active === "all" && activeView && activeView !== previousAllView) {
         previousAllView = activeView
-        if (prevActive === "all") requestFiles(mediaFolderPaths, activeView === "folder" ? 0 : 5)
+        if (prevActive === "all") requestFiles(mediaFolderPaths, activeView === "folder" ? 0 : MEDIA_LIBRARY_DEPTH)
     }
     $: if (searchValue !== undefined) filterSearch()
 
@@ -349,9 +357,9 @@
             return
         }
 
-        if (active !== "favourites" && currentDepth < 5) {
-            if (active === "all") await requestFiles(mediaFolderPaths, 5)
-            else await requestFiles(path, 5)
+        if (active !== "favourites" && currentDepth < MEDIA_LIBRARY_DEPTH) {
+            if (active === "all") await requestFiles(mediaFolderPaths, MEDIA_LIBRARY_DEPTH)
+            else await requestFiles(path, MEDIA_LIBRARY_DEPTH)
         }
 
         if (active === "all") {
@@ -446,9 +454,17 @@
     }
 
     let lastPaths: string[] = []
+    function setFolderPath(folderPath: string) {
+        path = folderPath
+        drawerTabsData.update((data) => {
+            if (data.media) data.media.activeFolderPath = folderPath
+            return data
+        })
+    }
+
     function goForward() {
         if (lastPaths.length) {
-            path = lastPaths.pop() || rootPath
+            setFolderPath(lastPaths.pop() || rootPath)
             lastPaths = lastPaths.filter((a) => a.includes(path))
         }
     }
@@ -456,7 +472,7 @@
     function goBack(e?: ClickEvent) {
         if (e?.detail.ctrl) {
             lastPaths.push(path)
-            path = rootPath
+            setFolderPath(rootPath)
             return
         }
 
@@ -465,7 +481,7 @@
 
         lastPaths.push(path)
 
-        path = folder.length > rootPath.length ? folder || rootPath : rootPath
+        setFolderPath(folder.length > rootPath.length ? folder || rootPath : rootPath)
     }
 
     const slidesViews: any = { grid: "list", list: "grid" }
@@ -475,7 +491,7 @@
 
     function openMediaFolder(folderPath: string) {
         if (active !== "all") {
-            path = folderPath
+            setFolderPath(folderPath)
             return
         }
 
@@ -484,7 +500,8 @@
 
         drawerTabsData.update((data) => {
             if (!data.media) data.media = { enabled: true, activeSubTab: folderId }
-            else data.media.activeSubTab = folderId
+            data.media.activeSubTab = folderId
+            data.media.activeFolderPath = folderPath
             return data
         })
     }

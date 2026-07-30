@@ -252,6 +252,7 @@ export const interactions: Writable<{ [key: string]: Interaction }> = writable({
 // MEDIA
 export const media: Writable<Media> = writable({}) // {}
 export const mediaFolders: Writable<Categories> = writable({}) // {default}
+export const mediaFolderRefresh: Writable<number> = writable(0)
 export const videoMarkers: Writable<{ [key: string]: { name: string; time: number }[] }> = writable({}) // {}
 export const effects: Writable<Effects> = writable({}) // {default}
 

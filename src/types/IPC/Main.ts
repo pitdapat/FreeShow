@@ -134,6 +134,7 @@ export enum Main {
     MEDIA_FOLDER_COPY = "MEDIA_FOLDER_COPY",
     READ_BIBLES_FOLDER = "READ_BIBLES_FOLDER",
     FILE_INFO = "FILE_INFO",
+    MOVE_MEDIA_FILES = "MOVE_MEDIA_FILES",
     READ_FOLDER = "READ_FOLDER",
     READ_FILE = "READ_FILE",
     OPEN_FOLDER = "OPEN_FOLDER",
@@ -237,6 +238,7 @@ export interface MainSendPayloads {
     [Main.BUNDLE_MEDIA_FILES]: { openFolder?: boolean; outputPath?: string }
     [Main.MEDIA_FOLDER_COPY]: { paths: string[] }
     [Main.FILE_INFO]: string
+    [Main.MOVE_MEDIA_FILES]: { paths: string[]; destination: string }
     [Main.READ_FOLDER]: { path: string | string[]; depth?: number; generateThumbnails?: boolean; captureFolderContent?: boolean }
     [Main.READ_FILE]: { path: string }
     [Main.OPEN_FOLDER]: { channel: string; title?: string; path?: string }
@@ -343,6 +345,7 @@ export interface MainReturnPayloads {
     [Main.GET_MEDIA_FOLDER_PATH]: string
     [Main.READ_BIBLES_FOLDER]: { path: string; name: string }[]
     [Main.FILE_INFO]: { path: string; stat: Stats; extension: string; folder: boolean } | null
+    [Main.MOVE_MEDIA_FILES]: Promise<{ moved: { oldPath: string; newPath: string }[]; errors: { path: string; error: string }[] }>
     [Main.READ_FOLDER]: Promise<{ [key: string]: FileFolder }>
     [Main.READ_FILE]: { content: string }
     // SYNC

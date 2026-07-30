@@ -9,11 +9,13 @@
 
     export let id: SelectIds
     export let data: any
+    export let dropData: any = undefined
     export let fill = false
     export let draggable = false
     export let shiftRange: any[] = []
     export let onlyRightClickSelect = false
     export let selectable = true
+    export let droppable: boolean | null = null
     export let trigger: null | "row" | "column" = null
     export let fileOver = false
     export let borders: "all" | "center" | "edges" = "all"
@@ -307,7 +309,7 @@
     }
 
     function dragOver(key: "start" | "center" | "end") {
-        if (!selectable) return
+        if (droppable === false || (droppable === null && !selectable)) return
         dragover = key
         triggerHoverAction()
         activeDropId.set(thisId)
@@ -328,7 +330,7 @@
     }}
 />
 
-<div {id} data-item={JSON.stringify(data)} {draggable} style={$$props.style} class="selectElem {$$props.class || ''}" class:fill class:isSelected={selectable && $selected.id === id && arrayHasData($selected.data, data)} bind:this={elem} on:mouseenter={enter} on:mousedown={mousedown} on:dragstart={(e) => mousedown(e, true)}>
+<div {id} data-item={JSON.stringify(dropData === undefined ? data : dropData)} {draggable} style={$$props.style} class="selectElem {$$props.class || ''}" class:fill class:isSelected={selectable && $selected.id === id && arrayHasData($selected.data, data)} bind:this={elem} on:mouseenter={enter} on:mousedown={mousedown} on:dragstart={(e) => mousedown(e, true)}>
     <!-- on:mouseup={mouseup}
     on:contextmenu={contextmenu} -->
     <!-- TODO: validateDrop(id, $selected.id, true) -->

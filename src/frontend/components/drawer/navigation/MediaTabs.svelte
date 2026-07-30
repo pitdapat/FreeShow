@@ -4,8 +4,9 @@
     import type { ContentProviderId } from "../../../../electron/contentProviders/base/types"
     import { Main } from "../../../../types/IPC/Main"
     import { ToMain } from "../../../../types/IPC/ToMain"
+    import type { FileFolder } from "../../../../types/Main"
     import { destroyMain, receiveToMain, requestMain, sendMain } from "../../../IPC/main"
-    import { drawerTabsData, labelsDisabled, media, mediaFolders, providerConnections, special } from "../../../stores"
+    import { drawerTabsData, labelsDisabled, media, mediaFolderRefresh, mediaFolders, providerConnections, special } from "../../../stores"
     import { getAccess } from "../../../utils/profile"
     import { keysToID, sortObject } from "../../helpers/array"
     import { addDrawerFolder } from "../../helpers/dropActions"
@@ -13,32 +14,35 @@
     import { countFolderMediaItems } from "../../helpers/media"
     import T from "../../helpers/T.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
+    import { buildMediaFolderTree, MEDIA_LIBRARY_DEPTH, normalizeMediaPath, type MediaFolderTreeNode } from "../media/mediaLibrary"
     import NavigationSections from "./NavigationSections.svelte"
 
     const profile = getAccess("media")
     $: readOnly = profile.global === "read"
 
     $: activeSubTab = $drawerTabsData.media?.activeSubTab || ""
+    $: activeFolderPath = $drawerTabsData.media?.activeFolderPath || ""
 
     $: foldersList = keysToID($mediaFolders)
     $: favoritesListLength = Object.values($media).filter((a) => !a.audio && a.favourite).length
 
     let allCount = 0
-    let folderLengths: { [key: string]: number } = {}
-    $: if (foldersList.length) getCounts()
+    let folderContents: FileFolder[] = []
+    let countsRequest = 0
+    $: if (foldersList.length || $mediaFolderRefresh) getCounts()
     async function getCounts() {
+        const requestId = ++countsRequest
         const folderPaths = foldersList.map((a) => a.path || "")
-        const data = keysToID((await requestMain(Main.READ_FOLDER, { path: folderPaths, depth: 5 })) || {})
-        const newFolderLengths: { [key: string]: number } = {}
+        const data = keysToID((await requestMain(Main.READ_FOLDER, { path: folderPaths, depth: MEDIA_LIBRARY_DEPTH })) || {})
+        if (requestId !== countsRequest) return
+
+        folderContents = data
         allCount = 0
 
         folderPaths.forEach((folderPath) => {
             const count = countFolderMediaItems(folderPath, data, true)
-            newFolderLengths[folderPath] = count.folder + count.video + count.image
             allCount += count.video + count.image
         })
-
-        folderLengths = newFolderLengths
     }
 
     // Content providers with libraries, and are currently connected
@@ -68,14 +72,46 @@
         ],
         ...(curriculumProviders.length ? [[{ id: "TITLE", label: "Curriculum" }, ...curriculumProviders.map((a) => ({ id: a.providerId, label: a.displayName, icon: "web" }))]] : []),
         [{ id: "inputs", label: "emitters.inputs", icon: "input" }, "SEPARATOR", { id: "online", label: "media.online", icon: "web" }].filter(Boolean),
-        [{ id: "TITLE", label: "media.folders" }, ...convertToButton(foldersList, folderLengths)]
+        [{ id: "TITLE", label: "media.folders" }, ...convertToButton(foldersList, folderContents, activeFolderPath)]
     ]
 
-    function convertToButton(categories: any[], lengths: { [key: string]: number }) {
+    function convertToButton(categories: any[], contents: FileFolder[], selectedPath: string) {
         return sortObject(categories, "name").map((a) => {
-            const type = a.mediaType
-            const option = type ? { title: `clock.type: <b>preview.${type}</b>`, icon: `type_${type}`, style: "opacity: 0.6;" } : null
-            return { id: a.id, label: a.name, icon: a.icon || "folder", option, count: lengths[a.path], boxedIcon: true }
+            const tree = buildMediaFolderTree(contents, a.path)
+            return convertFolderNode(tree, a, contents, selectedPath, true)
+        })
+    }
+
+    function convertFolderNode(folder: MediaFolderTreeNode, rootFolder: any, contents: FileFolder[], selectedPath: string, isRoot = false): any {
+        const type = isRoot ? rootFolder.mediaType : null
+        const option = type ? { title: `clock.type: <b>preview.${type}</b>`, icon: `type_${type}`, style: "opacity: 0.6;" } : null
+        const count = countFolderMediaItems(folder.path, contents, true)
+        const activePath = selectedPath || rootFolder.path
+
+        return {
+            id: isRoot ? rootFolder.id : `media-folder:${normalizeMediaPath(folder.path)}`,
+            label: isRoot ? rootFolder.name : folder.name,
+            icon: "folder",
+            option,
+            count: count.folder + count.video + count.image,
+            boxedIcon: true,
+            noEdit: !isRoot,
+            droppable: true,
+            targetTabId: rootFolder.id,
+            treeKey: `media:${normalizeMediaPath(folder.path)}`,
+            isActive: activeSubTab === rootFolder.id && normalizeMediaPath(activePath) === normalizeMediaPath(folder.path),
+            openTrigger: () => openFolder(rootFolder.id, folder.path),
+            dropData: { id: rootFolder.id, path: folder.path, type: "media_folder" },
+            treeChildren: folder.treeChildren.map((child) => convertFolderNode(child, rootFolder, contents, selectedPath))
+        }
+    }
+
+    function openFolder(rootId: string, folderPath: string) {
+        drawerTabsData.update((data) => {
+            if (!data.media) data.media = { enabled: true, activeSubTab: rootId }
+            data.media.activeSubTab = rootId
+            data.media.activeFolderPath = folderPath
+            return data
         })
     }
 

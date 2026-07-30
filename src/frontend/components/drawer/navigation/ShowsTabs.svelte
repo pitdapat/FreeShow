@@ -9,6 +9,7 @@
     import T from "../../helpers/T.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import NavigationSections from "./NavigationSections.svelte"
+    import { countNestedNavigationItems, nestNavigationItems } from "./navigationTree"
 
     $: profile = $activeProfile ? getAccess("shows") : {}
     $: readOnly = profile.global === "read"
@@ -41,18 +42,36 @@
             // { id: "locked", label: "output.state_locked", icon: "locked", count: lockedShowsLength, hidden: !lockedShowsLength },
             { id: "unlabeled", label: "category.unlabeled", icon: "noIcon", count: uncategorizedShowsLength, hidden: !uncategorizedShowsLength && activeSubTab !== "unlabeled" } // , boxedIcon: true
         ],
-        [{ id: "TITLE", label: "guide_title.categories" }, ...convertToButton(unarchivedCategoriesList), ...(archivedCategoriesList.length ? [{ id: "SEPARATOR", label: "actions.archive_title" }, ...convertToButton(archivedCategoriesList)] : [])]
+        [{ id: "TITLE", label: "show.libraries" }, ...convertToButton(unarchivedCategoriesList), ...(archivedCategoriesList.length ? [{ id: "SEPARATOR", label: "actions.archive_title" }, ...convertToButton(archivedCategoriesList)] : [])]
     ]
 
     function convertToButton(categories: any[]) {
-        return sortObject(categories, "name").map((a: any) => {
+        const categoryMap = Object.fromEntries(categories.map((category) => [category.id, category]))
+        const directCounts = Object.fromEntries(categories.map((category) => [category.id, allVisibleShows.reduce((count, show) => count + (show.category === category.id ? 1 : 0), 0)]))
+        const buttons = sortObject(categories, "name").map((a: any) => {
             const action = a.action
             const template = a.template
             const metadata = a.metadata?.display
-            const count = allVisibleShows.reduce((count, show) => count + (show.category === a.id ? 1 : 0), 0)
+            const count = countNestedNavigationItems(categoryMap, directCounts, a.id)
             const readOnly = profile.global === "read" || profile[a.id] === "read"
-            return { id: a.id, label: a.name, icon: a.icon, action, template, metadata, count, readOnly, customIcon: true, boxedIcon: true }
+            return {
+                id: a.id,
+                parent: categoryMap[a.parent] ? a.parent : null,
+                label: a.name,
+                icon: a.icon || "folder",
+                action,
+                template,
+                metadata,
+                count,
+                readOnly,
+                customIcon: !!a.icon,
+                boxedIcon: true,
+                draggable: true,
+                dropData: { id: a.id, parent: a.parent || null, type: "show_category" }
+            }
         })
+
+        return nestNavigationItems(buttons)
     }
 
     function newCategory() {
@@ -71,9 +90,9 @@
 
 <NavigationSections {sections} active={activeSubTab} on:rename={updateName}>
     <div slot="section_1" style="padding: 8px;{categoriesList.length ? 'padding-top: 12px;' : ''}">
-        <MaterialButton style="width: 100%;" title="new.category" variant="outlined" disabled={readOnly} on:click={newCategory} small>
+        <MaterialButton style="width: 100%;" title="new.library" variant="outlined" disabled={readOnly} on:click={newCategory} small>
             <Icon id="add" size={$labelsDisabled ? 0.9 : 1} white={$labelsDisabled} />
-            {#if !$labelsDisabled}<T id="new.category" />{/if}
+            {#if !$labelsDisabled}<T id="new.library" />{/if}
         </MaterialButton>
     </div>
 </NavigationSections>

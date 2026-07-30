@@ -6,9 +6,9 @@ import type { History } from "../../../types/History"
 import { Main } from "../../../types/IPC/Main"
 import type { DropData, Selected } from "../../../types/Main"
 import type { Item, Slide, SlideAction } from "../../../types/Show"
-import { sendMain } from "../../IPC/main"
+import { requestMain, sendMain } from "../../IPC/main"
 import { changeLayout, changeSlideGroups } from "../../show/slides"
-import { activeDrawerTab, activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, audioFolders, audioPlaylists, audioStreams, drawerTabsData, editingProjectTemplate, media, mediaFolders, overlays, playerVideos, projects, projectTemplates, scriptureSettings, shows, showsCache, templates, timers } from "../../stores"
+import { activeDrawerTab, activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, audioFolders, audioPlaylists, audioStreams, categories, drawerTabsData, editingProjectTemplate, media, mediaFolderRefresh, mediaFolders, overlays, playerVideos, projects, projectTemplates, scriptureSettings, shows, showsCache, templates, timers } from "../../stores"
 import { newToast } from "../../utils/common"
 import { getAccess } from "../../utils/profile"
 import { audioExtensions, imageExtensions, mediaExtensions, presentationExtensions, videoExtensions } from "../../values/extensions"
@@ -16,6 +16,7 @@ import { actionData } from "../actions/actionData"
 import { addSlideAction, getActionTriggerId } from "../actions/actions"
 import { getActiveScripturesContent, getReferenceText, getScriptureShow, getScriptureSlidesNew } from "../drawer/bible/scripture"
 import { getVimeoName, getYouTubeName, trimPlayerId } from "../drawer/player/playerHelper"
+import { wouldCreateNavigationCycle } from "../drawer/navigation/navigationTree"
 import { addItem, DEFAULT_ITEM_STYLE } from "../edit/scripts/itemHelpers"
 import { clone, removeDuplicates } from "./array"
 import { projectDropFolders } from "./drop"
@@ -384,15 +385,72 @@ export const dropActions = {
 
         return h
     },
-    navigation: ({ drag, drop }: Data, h: History) => {
+    navigation: async ({ drag, drop }: Data, h: History) => {
         if (drag.id === "files") {
             dropFileInDrawerNavigation(drag)
             return
         }
 
-        if (drop.data !== "all" && get(activeDrawerTab) && (drag.id === "show" || drag.id === "show_drawer")) {
+        const dropTarget = typeof drop.data === "object" && drop.data !== null ? drop.data : { id: drop.data }
+        const targetId = dropTarget.id
+
+        if (drag.id === "category_shows" && get(activeDrawerTab) === "shows") {
+            const movingIds = drag.data.map((item) => (typeof item === "string" ? item : item.id)).filter((id) => get(categories)[id])
+            const targetCategoryId = dropTarget.type === "show_category" ? targetId : null
+            const targetCategory = targetCategoryId ? get(categories)[targetCategoryId] : null
+            if (targetCategory && movingIds.some((id) => !!get(categories)[id]?.isArchive !== !!targetCategory.isArchive)) {
+                newToast("toast.folder_archive_mismatch")
+                return
+            }
+            if (!movingIds.length || wouldCreateNavigationCycle(get(categories), movingIds, targetCategoryId)) {
+                if (movingIds.length) newToast("toast.folder_cycle")
+                return
+            }
+
+            movingIds.forEach((id) => {
+                history({
+                    id: "UPDATE",
+                    oldData: { id },
+                    newData: { key: "parent", data: targetCategoryId || "" },
+                    location: { page: "drawer", id: "category_shows" }
+                })
+            })
+            return
+        }
+
+        if (drag.id === "media" && dropTarget.type === "media_folder") {
+            const paths = drag.data.map((item) => item.path).filter(Boolean)
+            if (!paths.length) return
+
+            const result = await requestMain(Main.MOVE_MEDIA_FILES, { paths, destination: dropTarget.path })
+            if (!result) return
+
+            if (result.moved.length) {
+                const replacements = new Map(result.moved.map((item) => [item.oldPath, item.newPath]))
+                media.update((mediaData) => {
+                    replacements.forEach((newPath, oldPath) => {
+                        if (mediaData[oldPath]) mediaData[newPath] = mediaData[oldPath]
+                        delete mediaData[oldPath]
+                    })
+                    return mediaData
+                })
+
+                activeShow.update((show) => {
+                    const newPath = show?.id ? replacements.get(show.id) : null
+                    return newPath && show ? { ...show, id: newPath } : show
+                })
+                mediaFolderRefresh.update((revision) => revision + 1)
+                newToast("toast.media_moved")
+            }
+
+            if (result.errors.length) newToast("toast.media_move_failed")
+            return
+        }
+
+        const validShowTarget = targetId === "unlabeled" || !!get(categories)[targetId]
+        if (validShowTarget && get(activeDrawerTab) === "shows" && (drag.id === "show" || drag.id === "show_drawer")) {
             h.id = "SHOWS"
-            const data = drop.data === "unlabeled" ? null : drop.data
+            const data = targetId === "unlabeled" ? null : targetId
             const allShowIds: string[] = drag.data.map(({ id }) => id).filter((id) => get(shows)[id])
             const showsList = allShowIds.map((id) => ({ show: { category: data }, id }))
             h.newData = { replace: true, data: showsList }
@@ -402,7 +460,7 @@ export const dropActions = {
         }
 
         // outdated:
-        if (drop.data === "favourites" && drag.id === "media") {
+        if (targetId === "favourites" && drag.id === "media") {
             drag.data.forEach((card) => {
                 const path: string = card.path || card.id
                 media.update((a) => {
@@ -416,11 +474,11 @@ export const dropActions = {
         }
 
         // audio playlist
-        if (get(audioPlaylists)[drop.data] && (drag.id === "audio" || drag.id === "audio_effect")) {
+        if (get(audioPlaylists)[targetId] && (drag.id === "audio" || drag.id === "audio_effect")) {
             h.id = "UPDATE"
             h.location = { page: "drawer", id: "audio_playlist_key" }
 
-            const playlistId = drop.data
+            const playlistId = targetId
             h.oldData = { id: playlistId }
 
             const songs = clone(get(audioPlaylists)[playlistId]?.songs || [])
@@ -431,12 +489,12 @@ export const dropActions = {
             return h
         }
 
-        if (drop.data !== "all" && (drag.id === "overlay" || drag.id === "template")) {
+        if (targetId !== "all" && (drag.id === "overlay" || drag.id === "template")) {
             drag.data.forEach((id) => {
                 history({
                     id: "UPDATE",
                     oldData: { id },
-                    newData: { key: "category", data: drop.data === "unlabeled" ? null : drop.data },
+                    newData: { key: "category", data: targetId === "unlabeled" ? null : targetId },
                     location: { page: "drawer", id: drag.id + "_category" }
                 })
             })

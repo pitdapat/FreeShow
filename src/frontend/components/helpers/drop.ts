@@ -29,7 +29,7 @@ const areaChildren = {
     project: ["show", "media", "audio", "audio_effect", "show_drawer", "player", "action"],
     slides: ["slide", "group", "global_group", "effect", "screen", "ndi", "camera", "microphone", "media", "audio", "audio_effect", "show"],
     all_slides: [],
-    navigation: ["show", "show_drawer", "media", "audio", "audio_effect", "overlay", "template"],
+    navigation: ["show", "show_drawer", "category_shows", "media", "audio", "audio_effect", "overlay", "template"],
     audio_playlist: ["audio"]
 }
 

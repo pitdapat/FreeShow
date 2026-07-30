@@ -29,12 +29,14 @@
 
     export let parentId = ""
     export let isSubmenu = false
+    export let treeDepth = 0
     $: submenu = category.submenu || {}
+    $: treeChildren = category.treeChildren || []
 
     export let active: string
 
     $: submenuActive = isSubmenu ? (active === "actions" ? $activeActionTagFilter.includes(id) : active === "variables" ? $activeVariableTagFilter.includes(id) : active === "timer" ? $activeTimerTagFilter.includes(id) : false) : false
-    $: isActive = submenuActive || active === id
+    $: isActive = category.isActive ?? (submenuActive || active === id)
 
     $: output = getFirstActiveOutput($outputs)
     $: showOutline = drawerId === "scripture" ? (output?.out?.slide as any)?.categoryId === id : drawerId === "audio" ? $activePlaylist?.id === id : false
@@ -51,7 +53,7 @@
         if (shift) return
 
         drawerTabsData.update((a) => {
-            a[drawerId].activeSubTab = parentId || id
+            a[drawerId].activeSubTab = category.targetTabId || parentId || id
             if (isSubmenu) a[drawerId].activeSubmenu = id
             else delete a[drawerId].activeSubmenu
             return a
@@ -69,11 +71,11 @@
     const defaultFolders = ["all", "unlabeled", "number", "favourites", "effects_library", "effects", "online", "inputs", "metronome"]
     const tabsWithCategories = ["shows", "media", "audio", "overlays", "templates", "scripture"]
 
-    $: noEdit = !tabsWithCategories.includes(drawerId) || defaultFolders.includes(id)
+    $: noEdit = category.noEdit || !tabsWithCategories.includes(drawerId) || defaultFolders.includes(id)
     $: className = noEdit ? "" : $audioPlaylists[id] ? "context #playlist" : `context #category_${drawerId}_button${readOnly ? "_readonly" : ""}`
 
-    // drag and drop audio playlists
-    $: draggable = !!(drawerId === "audio" && $audioPlaylists[id])
+    // drag and drop playlists and hierarchical show categories
+    $: draggable = !readOnly && (category.draggable ?? !!(drawerId === "audio" && $audioPlaylists[id]))
 
     // SUB MENU
 
@@ -97,11 +99,38 @@
             return a
         })
     }
+
+    $: closedTreeItems = $drawerTabsData[drawerId]?.closedTreeItems || []
+    $: treeKey = category.treeKey || `${drawerId}:${id}`
+    $: treeOpened = !closedTreeItems.includes(treeKey)
+
+    function toggleTree() {
+        drawerTabsData.update((data) => {
+            if (!data[drawerId]) return data
+
+            const closed = [...(data[drawerId].closedTreeItems || [])]
+            const index = closed.indexOf(treeKey)
+            if (index < 0) closed.push(treeKey)
+            else closed.splice(index, 1)
+            data[drawerId].closedTreeItems = closed
+            return data
+        })
+    }
 </script>
 
-<SelectElem style="width: 100%;" id={selectId} selectable={!noEdit} {draggable} borders="center" trigger="column" data={id}>
-    <MaterialButton class={className} style="width: 100%;font-weight: normal;padding: 0.2em {boxedIcon ? 0.64 : 0.8}em;" {isActive} {showOutline} on:click={click} on:dblclick={dblclick} tab>
+<SelectElem style="width: 100%;" id={selectId} selectable={category.selectable ?? !noEdit} droppable={category.droppable ?? category.selectable ?? !noEdit} {draggable} borders="center" trigger="column" data={id} dropData={category.dropData}>
+    <MaterialButton class={className} style="width: 100%;font-weight: normal;padding: 0.2em {boxedIcon ? 0.64 : 0.8}em;padding-inline-start: calc({boxedIcon ? 0.64 : 0.8}em + {treeDepth * 14}px);" {isActive} {showOutline} on:click={click} on:dblclick={dblclick} tab>
         <div style="max-width: 85%;{boxedIcon ? 'gap: 9px;' : ''}" data-title={translateText(label)}>
+            {#if treeChildren.length}
+                <span class="tree_toggle">
+                    <MaterialButton style="padding: 3px;" on:click={toggleTree}>
+                        <Icon id={treeOpened ? "arrow_down" : "arrow_right"} size={0.8} white />
+                    </MaterialButton>
+                </span>
+            {:else if treeDepth}
+                <span class="tree_spacer" />
+            {/if}
+
             <Icon id={icon} size={isSubmenu ? 0.85 : 1} color={isSubmenu ? category.color : boxedIcon ? customIconsColors[icon] || "" : ""} white custom={customIcon} boxed={isSubmenu || boxedIcon} />
 
             {#if noEdit || isSubmenu}
@@ -157,6 +186,14 @@
     </MaterialButton>
 </SelectElem>
 
+{#if treeChildren.length && treeOpened}
+    <div class="tree_children">
+        {#each treeChildren as child}
+            <svelte:self category={child} {active} treeDepth={treeDepth + 1} on:rename={(e) => dispatch("rename", e.detail)} />
+        {/each}
+    </div>
+{/if}
+
 {#if !isSubmenu && submenuOpened && submenu?.options?.length}
     <div class="submenus">
         {#each submenu.options as option}
@@ -192,6 +229,21 @@
         width: auto;
 
         opacity: 0.8;
+    }
+
+    .tree_toggle {
+        display: flex;
+        width: auto;
+        flex: 0 0 auto;
+    }
+    .tree_spacer {
+        width: 22px;
+        flex: 0 0 22px;
+    }
+    .tree_children {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
     }
 
     .submenus {
